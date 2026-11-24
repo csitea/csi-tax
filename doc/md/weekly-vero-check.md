@@ -191,6 +191,16 @@ clicked on its nearest clickable ancestor (run 8, 2026-11-24). The
 ancestor's whole text, and each line of it, must pass the forbidden list
 before the click; otherwise the step stops.
 
+Every click is a mouse click first. If it does not land within 5 s, it
+becomes a DOM click event on the same element, already checked against the
+forbidden list (run 9, 2026-11-24). Run 9 is the reason: a window in the background
+draws no frames, so Playwright's "stable" check never passes, and OmaVero
+keeps a transparent full-page busy layer (opacity 0) that would take a
+mouse click. The busy layer counts as idle at opacity 0. Before every click,
+of either kind, the element's text is checked against the forbidden list. Every
+step logs a `PAGE` line with the page's visibility and focus, and a failed
+step logs a second one.
+
 ## 5. The weekly schedule
 
 Owner's choice (2026-11-24): **every Tuesday at 15:30 Europe/Helsinki**.

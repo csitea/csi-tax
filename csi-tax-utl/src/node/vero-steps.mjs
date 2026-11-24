@@ -17,7 +17,7 @@ import {
   arrivalDate, clickLog, dueDate, inYear, isPdf,
   manifestRow, MANIFEST_COLUMNS, driveCategory,
 } from './vero-lib.mjs';
-import { clickControl, describeMatches, findControl, retrieveDoc } from './vero-click.mjs';
+import { clickControl, clickEl, describeMatches, findControl, pageState, retrieveDoc } from './vero-click.mjs';
 
 // One run's settings and results; set by runFetch, read by the steps.
 let BASE, YEAR, OUT, UI, rows, log;
@@ -131,7 +131,7 @@ async function stepBalance(ctx, page) {
     save('pages', `balance-${n}.txt`, await mainText(page));
     const next = await findControl(page, UI.links.next_page, UI.forbidden_clicks, 3000).catch(() => null);
     if (!next || !(await next.isEnabled())) break;
-    await next.click();
+    await clickEl(next, 5000, UI.forbidden_clicks);
     await page.waitForLoadState('networkidle').catch(() => {});
   }
 }
@@ -167,7 +167,7 @@ async function stepMessages(ctx, page) {
     const arrival = arrivalDate(td.join(' '));
     if (!inYear(arrival, YEAR)) continue;
     const title = (await link.innerText()).trim();
-    await link.click();
+    await clickEl(link, 5000, UI.forbidden_clicks);
     await page.waitForLoadState('networkidle').catch(() => {});
     const text = await mainText(page);
     const sum = sha256(text);
@@ -186,7 +186,7 @@ async function stepPayments(ctx, page) {
     .or(page.locator('main').getByText(UI.links.payments_csv, { exact: true }));
   const today = new Date().toISOString().slice(0, 10);
   for (let i = 0; i < await links.count(); i++) {
-    const [dl] = await Promise.all([page.waitForEvent('download'), links.nth(i).click()]);
+    const [dl] = await Promise.all([page.waitForEvent('download'), clickEl(links.nth(i), 5000, UI.forbidden_clicks)]);
     const p = join(OUT, 'csv', `payments-${i + 1}.csv`);
     mkdirSync(join(OUT, 'csv'), { recursive: true, mode: 0o700 });
     await dl.saveAs(p);
@@ -219,6 +219,9 @@ export async function runFetch({ ctx, page, ui, base, year, out, logFn }) {
   let failed = 0;
   const steps = Object.entries({ stepFront, stepBalance, stepInbox, stepArchive, stepMessages, stepPayments, stepTasks });
   for (const [idx, [name, step]] of steps.entries()) {
+    // visibility and focus at every step (dispatch c-002 481b549c): a
+    // background window draws no frames (run 9).
+    log(`PAGE ${name} ${JSON.stringify(await pageState(page))}`);
     try {
       await step(ctx, page); log(`OK ${name}`);
     } catch (e) {
@@ -232,6 +235,7 @@ export async function runFetch({ ctx, page, ui, base, year, out, logFn }) {
         }
       }
       log(`DIALOGS ${name} ${JSON.stringify(await dialogs(page))}`);
+      log(`PAGE ${name} at failure ${JSON.stringify(await pageState(page))}`);
       log(`PROBE ${name} ${JSON.stringify(await probe(page))}`);
       // stop at the first failure (dispatch rule for live runs): the next
       // steps start from a page in an unknown state.

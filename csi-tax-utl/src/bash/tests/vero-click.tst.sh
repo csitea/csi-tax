@@ -13,6 +13,9 @@
 #   9. An already selected tab is not clicked again with skipSelected
 #  11. A text match inside a clickable cell clicks the cell (run 8)
 #  12. A clickable ancestor holding a forbidden line is refused, not clicked
+#  13. A control that never holds still (an endless animation) is clicked
+#      by a DOM click event after clickMs, through a transparent layer
+#  14. clickEl with the forbidden list refuses before any click
 #  10. A click waits until the busy layer (.FastBusyOverlay) is hidden
 #   6. A control named harmlessly (aria-label) whose visible text is a
 #      forbidden action is refused after the lookup, not clicked
@@ -33,13 +36,15 @@ fi
 
 cat >"$T/fixture.html" <<'HTML'
 <html><body>
-<div class="FastBusyOverlay" id="busy" style="position:fixed;inset:0;display:none"></div>
+<div class="FastBusyOverlay" id="busy" style="position:fixed;inset:0;display:none;z-index:9"></div>
+<style>@keyframes wob{from{transform:translateX(0)}to{transform:translateX(40px)}} .wob{display:inline-block;animation:wob .2s infinite alternate}</style>
 <header><div role="tablist"><a role="tab" aria-selected="true" href="#" onclick="hit('front');return false">Omat verolajit</a><a role="tab" href="#" onclick="busyFor(600);hit('contact2');return false">Asiakastiedot</a><a onclick="hit('contact')">Yhteydenpito</a><a role="tab" href="#" onclick="hit('tasks');return false">Viestit 3</a></div></header>
 <main>
   <div style="display:none"><a href="#" onclick="hit('hidden');return false">Saldoerittely</a></div>
   <div><a href="#" onclick="hit('balance');return false"><span aria-hidden="false">›</span> Saldoerittely</a></div>
   <button onclick="hit('search')">Hae</button>
   <table role="presentation"><tr><td onclick="hit('cell')"><span>Maksutiedot</span></td></tr>
+  <tr><td><a class="wob" href="#" onclick="hit('wobble');return false"><span>Saldot</span></a></td></tr>
   <tr><td onclick="hit('bad-cell')"><div>Viestit arkisto</div><div>Siirrä kaikki arkistoon</div></td></tr></table>
   <a href="#" onclick="hit('archive-move');return false">Siirrä arkistoon</a>
   <a href="#" aria-label="Lomake" onclick="hit('form');return false">Tee uusi ilmoitus</a>
@@ -53,7 +58,7 @@ HTML
 cat >"$T/run.mjs" <<JS
 import { firefox } from '$MOD_ROOT/node_modules/playwright/index.mjs';
 import { readFileSync } from 'node:fs';
-import { clickControl, findControl } from '$MOD_ROOT/src/node/vero-click.mjs';
+import { clickControl, clickEl, findControl } from '$MOD_ROOT/src/node/vero-click.mjs';
 const forbidden = JSON.parse(readFileSync('$MOD_ROOT/cnf/vero-ui.json', 'utf8')).forbidden_clicks;
 const b = await firefox.launch({ headless: true });
 const page = await b.newPage();
@@ -72,6 +77,11 @@ out.c10 = await clickControl(page, 'Asiakastiedot', forbidden, 2000, { skipSelec
 out.c10b = await page.evaluate(() => window.clicks.slice(-2).join(','));
 await tryClick('c11', 'Maksutiedot', 2000);
 await tryClick('c12', 'Viestit arkisto', 2000);
+await page.evaluate(() => { const b = document.getElementById('busy'); b.style.display = 'block'; b.style.opacity = '0'; });
+const t13 = Date.now();
+out.c13 = await clickControl(page, 'Saldot', forbidden, 2000, { clickMs: 1500 }).catch((e) => e.message);
+out.c13ms = Date.now() - t13;
+out.c14 = await clickEl(page.locator('main a', { hasText: 'Siirrä arkistoon' }), 500, forbidden).catch((e) => e.message);
 out.clicks = await page.evaluate(() => window.clicks.join(','));
 console.log(JSON.stringify(out));
 await b.close();
@@ -93,5 +103,7 @@ v() { jq -r ".$1" <<<"$res"; }
 [[ "$(v c10)" == clicked && "$(v c10b)" == "contact2,idle" ]] && pass "10. click returns after the busy layer is hidden" || fail "10. $(v c10) $(v c10b)"
 [[ "$(v c11)" == clicked ]] && pass "11. text in a clickable cell clicks the cell" || fail "11. $(v c11)"
 [[ "$(v c12)" == "refused forbidden click: Siirrä kaikki arkistoon" ]] && pass "12. ancestor with a forbidden line refused" || fail "12. $(v c12)"
-[[ "$(v clicks)" == "contact,balance,search,tasks,contact2,idle,cell" ]] && pass "clicks were exactly contact,balance,search,tasks,contact2,idle,cell" || fail "clicks: $(v clicks)"
+[[ "$(v c13)" == dom-clicked && "$(v c13ms)" -lt 10000 ]] && pass "13. unstable control DOM-clicked through a transparent layer" || fail "13. $(v c13) in $(v c13ms) ms"
+[[ "$(v c14)" == "refused forbidden click: Siirrä arkistoon" ]] && pass "14. clickEl refuses a forbidden element" || fail "14. $(v c14)"
+[[ "$(v clicks)" == "contact,balance,search,tasks,contact2,idle,cell,wobble" ]] && pass "clicks were exactly contact,balance,search,tasks,contact2,idle,cell,wobble" || fail "clicks: $(v clicks)"
 finish

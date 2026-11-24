@@ -83,10 +83,14 @@ export async function findControl(page, name, forbidden, timeoutMs = 30000) {
 // detached from the DOM, retrying"). cnf selectors.busy overrides it.
 export const DEFAULT_BUSY = '.FastBusyOverlay';
 
-// settle: the page is quiet: network idle and the busy layer hidden.
+// settle: the page is quiet: network idle and the busy layer hidden or
+// transparent (run 9: it stays up, full size, at opacity 0). Polled on a
+// timer, not on animation frames: a background window draws none.
 export async function settle(page, busy = DEFAULT_BUSY, timeoutMs = 30000) {
   await page.waitForLoadState('networkidle').catch(() => {});
-  await page.locator(busy).filter({ visible: true }).first().waitFor({ state: 'hidden', timeout: timeoutMs }).catch(() => {});
+  await page.waitForFunction((sel) => [...document.querySelectorAll(sel)]
+    .every((e) => !(e.offsetWidth || e.offsetHeight) || getComputedStyle(e).opacity === '0'),
+  busy, { polling: 250, timeout: timeoutMs }).catch(() => {});
 }
 
 // isSelected: a tab that is already the open one (aria-selected on it or
@@ -96,15 +100,47 @@ export async function isSelected(loc) {
 }
 
 // clickControl: settle, findControl, click (unless opts.skipSelected and it
-// is already selected), settle again. Returns 'clicked' or 'selected'.
+// is already selected), settle again. Returns 'clicked', 'dom-clicked' or
+// 'selected'. A mouse click that does not land within opts.clickMs (default
+// 5 s) becomes a DOM click event on the same, already forbidden-checked
+// element (run 9: in a background window Playwright's "stable" check never
+// passes, and a transparent full-page layer would take a mouse click).
 export async function clickControl(page, name, forbidden, timeoutMs, opts = {}) {
   const busy = opts.busy || DEFAULT_BUSY;
   await settle(page, busy);
   const loc = await findControl(page, name, forbidden, timeoutMs);
   if (opts.skipSelected && await isSelected(loc)) return 'selected';
-  try { await loc.click(); } catch (e) { e.label = name; throw e; }
+  let how;
+  try { how = await clickEl(loc, opts.clickMs, forbidden); } catch (e) { e.label = name; throw e; }
   await settle(page, busy);
-  return 'clicked';
+  return how;
+}
+
+// clickEl: a mouse click, or after clickMs (default 5 s) a DOM click event
+// on the same element. Every click of the fetch goes through here; with a
+// forbidden list, the element's text and each line of it are checked
+// first, so no click of either kind lands on a forbidden control.
+export async function clickEl(loc, clickMs = 5000, forbidden = null) {
+  if (forbidden) {
+    const text = (await loc.innerText().catch(() => '')).trim();
+    const bad = [...text.split(/\n+/).map((l) => l.trim()), text].find((l) => l && isForbiddenLabel(l, forbidden));
+    if (bad) throw new Error(`refused forbidden click: ${bad}`);
+  }
+  try {
+    await loc.click({ timeout: clickMs });
+    return 'clicked';
+  } catch (e) {
+    if (e.name !== 'TimeoutError') throw e;
+    await loc.dispatchEvent('click');
+    return 'dom-clicked';
+  }
+}
+
+// pageState: is the page shown and focused (a background window draws no
+// frames)? For the failure log.
+export async function pageState(page) {
+  return page.evaluate(() => ({ visibility: document.visibilityState, focus: document.hasFocus() }))
+    .catch((e) => ({ error: e.message }));
 }
 
 // retrieveDoc(ctx, page, link, forbidden, retrieveMark): the bytes of the
@@ -124,7 +160,7 @@ export async function retrieveDoc(ctx, page, link, forbidden, retrieveMark, time
   ctx.on('page', onPage);
   const mine = () => ctx.pages().filter((p) => !before.has(p));
   try {
-    await link.click();
+    await clickEl(link, 5000, forbidden);
     const end = Date.now() + timeoutMs;
     while (Date.now() < end) {
       if (dl) {
