@@ -39,6 +39,21 @@ async function click(page, name, opts = {}) {
   await clickControl(page, name, UI.forbidden_clicks, opts.timeoutMs || 30000, { busy: UI.selectors.busy, ...opts });
 }
 
+// go: click a link that must open another view; OK only when the URL or
+// the main text changed within 15 s (run 10: a click that did nothing was
+// logged OK and the front page was saved as the balance page).
+async function go(page, name) {
+  const look = async () => `${page.url()}\n${sha256(await mainText(page).catch(() => ''))}`;
+  const before = await look();
+  await click(page, name);
+  const end = Date.now() + 15000;
+  while (Date.now() < end) {
+    if (await look() !== before) return;
+    await page.waitForTimeout(250);
+  }
+  throw new Error(`clicked "${name}" but the page did not change in 15 s`);
+}
+
 async function mainText(page) {
   return page.locator(UI.selectors.main).first().innerText();
 }
@@ -56,18 +71,14 @@ export async function waitForLogin(page, ui, loginS, logFn) {
 // home: back to the front page; every step starts here. It clicks the
 // front tab, unless that tab is already the selected one (a second click
 // only reloads the view and the busy layer redraws the tab bar, run 7);
-// a sub view without it (the decisions view, run 5) is left by
-// going back. Reloading the start URL is the last resort: OmaVero aborts it
-// (NS_BINDING_ABORTED, run 5), so its error is ignored and the login text
-// decides.
+// a view without the tab FAILs the step: no history back and no reload of
+// the start URL (run 10: going back left OmaVero for the login pages).
 async function home(page) {
-  for (let i = 0; i < 5; i++) {
-    try { await click(page, UI.tabs.front, { skipSelected: true, timeoutMs: 3000 }); return; } catch { /* not on this view */ }
-    await page.goBack().catch(() => {});
-    await page.waitForLoadState('networkidle').catch(() => {});
+  // never history back or a start-URL reload: run 10 went back past OmaVero
+  // into the bank login chain and ended the login. The tab or a FAIL.
+  try { await click(page, UI.tabs.front, { skipSelected: true, timeoutMs: 10000 }); } catch (e) {
+    throw new Error(`front tab not on this page (no history back, run 10): ${e.message.split('\n')[0]}`);
   }
-  await page.goto(BASE).catch(() => {});
-  await page.getByText(UI.logged_in_text).first().waitFor({ timeout: 30000 });
 }
 
 // dialogs: for a failed step, what may cover the page: visible dialogs,
@@ -126,7 +137,7 @@ async function stepFront(ctx, page) {
 
 async function stepBalance(ctx, page) {
   await home(page);
-  await click(page, UI.links.balance);
+  await go(page, UI.links.balance);
   for (let n = 1; n <= 50; n++) {
     save('pages', `balance-${n}.txt`, await mainText(page));
     const next = await findControl(page, UI.links.next_page, UI.forbidden_clicks, 3000).catch(() => null);
@@ -139,15 +150,15 @@ async function stepBalance(ctx, page) {
 async function stepInbox(ctx, page) {
   await home(page);
   await click(page, UI.tabs.contact);
-  await click(page, UI.links.decisions);
+  await go(page, UI.links.decisions);
   await pdfRows(ctx, page, page.locator(UI.selectors.inbox_row_link), 'inbox');
 }
 
 async function stepArchive(ctx, page) {
   await home(page);
   await click(page, UI.tabs.contact);
-  await click(page, UI.links.decisions);
-  await click(page, UI.links.archive);
+  await go(page, UI.links.decisions);
+  await go(page, UI.links.archive);
   const inputs = page.locator(UI.selectors.archive_date_inputs);
   await inputs.nth(0).fill(`1.1.${YEAR}`);
   await inputs.nth(1).fill(`31.12.${YEAR}`);
@@ -159,7 +170,7 @@ async function stepArchive(ctx, page) {
 async function stepMessages(ctx, page) {
   await home(page);
   await click(page, UI.tabs.contact);
-  await click(page, UI.links.messages);
+  await go(page, UI.links.messages);
   const n = await page.locator(`${UI.selectors.main} tr a`).count();
   for (let i = 0; i < n; i++) {
     const link = page.locator(`${UI.selectors.main} tr a`).nth(i);
@@ -180,7 +191,7 @@ async function stepMessages(ctx, page) {
 
 async function stepPayments(ctx, page) {
   await home(page);
-  await click(page, UI.links.payments);
+  await go(page, UI.links.payments);
   await findControl(page, UI.links.payments_csv, UI.forbidden_clicks);
   const links = page.getByRole('link', { name: UI.links.payments_csv })
     .or(page.locator('main').getByText(UI.links.payments_csv, { exact: true }));

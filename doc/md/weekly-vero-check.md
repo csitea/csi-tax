@@ -130,6 +130,14 @@ failed (`FAIL <step>`). The run stops at the first failed step
 (`STOP after <step>`), so the later steps never act on a page in an unknown
 state. What was fetched is kept, and a rerun fetches again.
 
+Every step starts from the front page by clicking its tab. When the tab is
+not on the page, the step FAILs: the run never goes back in the browser history
+and never reloads the start URL (run 10, 2026-11-24, went back past
+OmaVero into the bank login pages and ended the login). A click on a link
+that opens another view counts only when the URL or the main text changed
+within 15 s, so a click that did nothing is a FAIL, never an OK that saves
+the wrong page. Logged URLs lose their query string (`?<scrubbed>`).
+
 Every click first waits until the page is quiet: the network is idle and
 OmaVero's busy layer (cnf `selectors.busy`, `.FastBusyOverlay`) is hidden.
 After the click it waits again. A tab that is already selected is not

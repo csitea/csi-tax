@@ -108,9 +108,15 @@ export function clickLog(message) {
   const keep = /intercepts pointer events|not stable|not visible|not enabled|outside of the viewport|waiting for|retrying|scrolling/i;
   const out = [];
   for (const raw of String(message).split('\n').slice(1)) {
-    const l = scrubAmounts(raw.trim().replace(/^-\s*/, '')).slice(0, 200);
+    const l = scrubUrls(scrubAmounts(raw.trim().replace(/^-\s*/, ''))).slice(0, 200);
     if (l && keep.test(l) && !out.includes(l)) out.push(l);
     if (out.length === 6) break;
   }
   return out;
+}
+
+// scrubUrls(text): every URL without its query and fragment (run 10: a
+// login redirect's one-time code reached the click log).
+export function scrubUrls(text) {
+  return String(text).replace(/(https?:\/\/[^\s?#"']+)[?#][^\s"']*/g, '$1?<scrubbed>');
 }

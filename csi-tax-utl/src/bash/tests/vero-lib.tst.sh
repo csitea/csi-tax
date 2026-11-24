@@ -47,4 +47,6 @@ check 9 "keep-alive due" "false true false true false" \
   "console.log([L.keepaliveDue(119999,0),L.keepaliveDue(120000,0),L.keepaliveDue(999999,0,{VERO_KEEPALIVE:'0'}),L.keepaliveDue(60000,0,{VERO_KEEPALIVE_MIN:'1'}),L.keepaliveDue(9e9,0,{VERO_KEEPALIVE_MIN:'0'})].join(' '))"
 check 10 "click log keeps why a click did not land" "<div class=ov> intercepts pointer events|waiting for element to be visible, enabled and stable|2" \
   "const m='locator.click: Timeout 30000ms exceeded.\\nCall log:\\n  - waiting for element to be visible, enabled and stable\\n  - <div class=ov> intercepts pointer events\\n  - <div class=ov> intercepts pointer events\\n  - some other line'; const c=L.clickLog(m); console.log(c[1]+'|'+c[0]+'|'+c.length)"
+check 11 "urls lose their query" "go https://id.example.com/return?<scrubbed> x https://a.example.com/p" \
+  "console.log(L.scrubUrls('go https://id.example.com/return?code=abc&state=d x https://a.example.com/p'))"
 finish
