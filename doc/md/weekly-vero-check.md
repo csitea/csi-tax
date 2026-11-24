@@ -180,7 +180,16 @@ The window stays open for the next run. The run's staging dir stays (mode
 line: the role, name and visibility of the controls that carry a cnf label,
 no page data. It also logs `CLICKLOG` lines, which give Playwright's reason a click
 did not land (e.g. `<div …> intercepts pointer events`), and a `DIALOGS` line
-listing the visible dialogs or full-page layers that may cover the page.
+listing the visible dialogs or full-page layers that may cover the page, with
+their size, opacity and pointer-events. A `MATCHES` line describes each element that carries the
+failed label (tag, role, box, opacity, href/onclick, its clickable
+ancestor), and `NEXT` lines do the same for the next two steps' labels.
+These are shapes only, never page data.
+
+A label found only as text (no link, tab or button has that name) is
+clicked on its nearest clickable ancestor (run 8, 2026-11-24). The
+ancestor's whole text, and each line of it, must pass the forbidden list
+before the click; otherwise the step stops.
 
 ## 5. The weekly schedule
 

@@ -11,6 +11,8 @@
 #   7. A hidden duplicate is skipped: the visible one is clicked
 #   8. A tab whose name carries a counter ("Viestit 3") is found by its label
 #   9. An already selected tab is not clicked again with skipSelected
+#  11. A text match inside a clickable cell clicks the cell (run 8)
+#  12. A clickable ancestor holding a forbidden line is refused, not clicked
 #  10. A click waits until the busy layer (.FastBusyOverlay) is hidden
 #   6. A control named harmlessly (aria-label) whose visible text is a
 #      forbidden action is refused after the lookup, not clicked
@@ -37,6 +39,8 @@ cat >"$T/fixture.html" <<'HTML'
   <div style="display:none"><a href="#" onclick="hit('hidden');return false">Saldoerittely</a></div>
   <div><a href="#" onclick="hit('balance');return false"><span aria-hidden="false">›</span> Saldoerittely</a></div>
   <button onclick="hit('search')">Hae</button>
+  <table role="presentation"><tr><td onclick="hit('cell')"><span>Maksutiedot</span></td></tr>
+  <tr><td onclick="hit('bad-cell')"><div>Viestit arkisto</div><div>Siirrä kaikki arkistoon</div></td></tr></table>
   <a href="#" onclick="hit('archive-move');return false">Siirrä arkistoon</a>
   <a href="#" aria-label="Lomake" onclick="hit('form');return false">Tee uusi ilmoitus</a>
 </main>
@@ -66,6 +70,8 @@ await tryClick('c8', 'Viestit', 2000);
 out.c9 = await clickControl(page, 'Omat verolajit', forbidden, 2000, { skipSelected: true });
 out.c10 = await clickControl(page, 'Asiakastiedot', forbidden, 2000, { skipSelected: true });
 out.c10b = await page.evaluate(() => window.clicks.slice(-2).join(','));
+await tryClick('c11', 'Maksutiedot', 2000);
+await tryClick('c12', 'Viestit arkisto', 2000);
 out.clicks = await page.evaluate(() => window.clicks.join(','));
 console.log(JSON.stringify(out));
 await b.close();
@@ -85,5 +91,7 @@ v() { jq -r ".$1" <<<"$res"; }
 [[ "$(v c8)" == clicked ]] && pass "8. tab with a counter found" || fail "8. $(v c8)"
 [[ "$(v c9)" == selected ]] && pass "9. selected tab not clicked again" || fail "9. $(v c9)"
 [[ "$(v c10)" == clicked && "$(v c10b)" == "contact2,idle" ]] && pass "10. click returns after the busy layer is hidden" || fail "10. $(v c10) $(v c10b)"
-[[ "$(v clicks)" == "contact,balance,search,tasks,contact2,idle" ]] && pass "clicks were exactly contact,balance,search,tasks,contact2,idle" || fail "clicks: $(v clicks)"
+[[ "$(v c11)" == clicked ]] && pass "11. text in a clickable cell clicks the cell" || fail "11. $(v c11)"
+[[ "$(v c12)" == "refused forbidden click: Siirrä kaikki arkistoon" ]] && pass "12. ancestor with a forbidden line refused" || fail "12. $(v c12)"
+[[ "$(v clicks)" == "contact,balance,search,tasks,contact2,idle,cell" ]] && pass "clicks were exactly contact,balance,search,tasks,contact2,idle,cell" || fail "clicks: $(v clicks)"
 finish

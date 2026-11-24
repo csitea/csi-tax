@@ -35,7 +35,27 @@ async function firstHit(page, name) {
     if (await l.count()) return l.first();
   }
   const t = page.locator(SCOPE).getByText(name, { exact: true }).filter({ visible: true });
-  return (await t.count()) ? t.first() : null;
+  if (!(await t.count())) return null;
+  // run 8: the text match was a part of the clickable element and never
+  // became clickable itself; click its nearest clickable ancestor instead.
+  const up = t.first().locator(`xpath=ancestor-or-self::*[${CLICKABLE}][1]`);
+  return (await up.count()) && (await up.isVisible()) ? up : t.first();
+}
+
+const CLICKABLE = 'self::a or self::button or @role="link" or @role="button" or @role="tab" or @onclick';
+
+// describeMatches: for a click that did not land, each element carrying the
+// label, as tag / role / box / opacity / href / onclick / its clickable
+// ancestor's tag: shapes only, no page data.
+export async function describeMatches(page, name) {
+  return page.evaluate((n) => [...document.querySelectorAll('body *')]
+    .filter((e) => [...e.childNodes].some((c) => c.nodeType === 3 && c.textContent.trim() === n))
+    .slice(0, 6).map((e) => { const r = e.getBoundingClientRect(); const cs = getComputedStyle(e);
+      const up = e.closest('a, button, [role=link], [role=button], [role=tab], [onclick]');
+      return { tag: e.tagName.toLowerCase(), role: e.getAttribute('role') || '', box: [r.x, r.y, r.width, r.height].map(Math.round),
+        opacity: cs.opacity, pe: cs.pointerEvents, href: e.hasAttribute('href'), onclick: e.hasAttribute('onclick'),
+        up: up ? `${up.tagName.toLowerCase()}${up.hasAttribute('href') ? '[href]' : ''}${up.hasAttribute('onclick') ? '[onclick]' : ''}` : '' }; }), name)
+    .catch((e) => [`describe failed: ${e.message}`]);
 }
 
 // findControl(page, name, forbidden, timeoutMs): the locator of the control,
@@ -46,8 +66,11 @@ export async function findControl(page, name, forbidden, timeoutMs = 30000) {
   for (;;) {
     const hit = await firstHit(page, name);
     if (hit) {
+      // the whole text and each line of it: a clickable ancestor (run 8)
+      // may hold more than the label, and none of it may be forbidden.
       const text = (await hit.innerText().catch(() => '')).trim();
-      if (text && isForbiddenLabel(text, forbidden)) throw new Error(`refused forbidden click: ${text}`);
+      const bad = [...text.split(/\n+/).map((l) => l.trim()), text].find((l) => l && isForbiddenLabel(l, forbidden));
+      if (bad) throw new Error(`refused forbidden click: ${bad}`);
       return hit;
     }
     if (Date.now() > end) throw new Error(`no control named "${name}" within ${timeoutMs} ms`);
@@ -79,7 +102,7 @@ export async function clickControl(page, name, forbidden, timeoutMs, opts = {}) 
   await settle(page, busy);
   const loc = await findControl(page, name, forbidden, timeoutMs);
   if (opts.skipSelected && await isSelected(loc)) return 'selected';
-  await loc.click();
+  try { await loc.click(); } catch (e) { e.label = name; throw e; }
   await settle(page, busy);
   return 'clicked';
 }

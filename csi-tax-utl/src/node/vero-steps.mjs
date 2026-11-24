@@ -17,7 +17,7 @@ import {
   arrivalDate, clickLog, dueDate, inYear, isPdf,
   manifestRow, MANIFEST_COLUMNS, driveCategory,
 } from './vero-lib.mjs';
-import { clickControl, findControl, retrieveDoc } from './vero-click.mjs';
+import { clickControl, describeMatches, findControl, retrieveDoc } from './vero-click.mjs';
 
 // One run's settings and results; set by runFetch, read by the steps.
 let BASE, YEAR, OUT, UI, rows, log;
@@ -79,7 +79,8 @@ async function dialogs(page) {
       return e.matches('[role=dialog], [role=alertdialog], dialog, [aria-modal=true], .modal')
         || ((cs.position === 'fixed' || cs.position === 'absolute') && e.offsetWidth >= innerWidth * 0.8 && e.offsetHeight >= innerHeight * 0.8); })
     .slice(0, 10).map((e) => ({ tag: e.tagName.toLowerCase(), role: e.getAttribute('role') || '', cls: String(e.className).slice(0, 60),
-      text: (e.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 60) })))
+      text: (e.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 60),
+      box: [e.offsetWidth, e.offsetHeight], opacity: getComputedStyle(e).opacity, pe: getComputedStyle(e).pointerEvents })))
     .catch((e) => [`dialogs failed: ${e.message}`]);
 }
 
@@ -204,15 +205,32 @@ async function stepTasks(ctx, page) {
 
 // runFetch: the steps in order on the session's page; writes manifest.tsv
 // and returns 0, or 3 when a step failed.
+// the labels each step clicks, for the diagnostics of the next steps
+// when one fails (dispatch c-003 93d9a8d3: one failure tells more).
+const STEP_TARGETS = {
+  stepFront: ['front'], stepBalance: ['balance', 'next_page'], stepInbox: ['contact', 'decisions'],
+  stepArchive: ['archive', 'archive_search'], stepMessages: ['contact', 'messages'],
+  stepPayments: ['payments', 'payments_csv'], stepTasks: ['tasks'],
+};
+const label = (k) => UI.tabs[k] || UI.links[k];
+
 export async function runFetch({ ctx, page, ui, base, year, out, logFn }) {
   BASE = base; YEAR = year; OUT = out; UI = ui; rows = []; log = logFn;
   let failed = 0;
-  for (const [name, step] of Object.entries({ stepFront, stepBalance, stepInbox, stepArchive, stepMessages, stepPayments, stepTasks })) {
+  const steps = Object.entries({ stepFront, stepBalance, stepInbox, stepArchive, stepMessages, stepPayments, stepTasks });
+  for (const [idx, [name, step]] of steps.entries()) {
     try {
       await step(ctx, page); log(`OK ${name}`);
     } catch (e) {
       failed++; log(`FAIL ${name}: ${e.message.split('\n')[0]}`);
       for (const l of clickLog(e.message)) log(`CLICKLOG ${name} ${l}`);
+      if (e.label) log(`MATCHES ${name} ${e.label}: ${JSON.stringify(await describeMatches(page, e.label))}`);
+      for (const [next] of steps.slice(idx + 1, idx + 3)) {
+        for (const l of (STEP_TARGETS[next] || []).map(label)) {
+          const m = await describeMatches(page, l);
+          log(`NEXT ${next} ${l}: ${m.length ? JSON.stringify(m) : 'not on this page'}`);
+        }
+      }
       log(`DIALOGS ${name} ${JSON.stringify(await dialogs(page))}`);
       log(`PROBE ${name} ${JSON.stringify(await probe(page))}`);
       // stop at the first failure (dispatch rule for live runs): the next
