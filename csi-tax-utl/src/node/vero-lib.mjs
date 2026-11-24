@@ -91,11 +91,13 @@ export function isWriteRequest(method) {
 }
 
 // keepaliveDue(now, last, env): the kept-open session reloads its keep-alive
-// tab when VERO_KEEPALIVE is not 0 and VERO_KEEPALIVE_MIN minutes (default 2:
-// the owner, msg c65f1716, OmaVero drops an idle login after about 5) have
-// passed since the last reload or fetch. Times in ms.
+// tab only when VERO_KEEPALIVE=1 (OFF by default since run 13: the login was
+// lost twice around a keep-alive reload of the start page in a second tab,
+// unproven) and VERO_KEEPALIVE_MIN minutes (default 2: the owner, msg
+// c65f1716, OmaVero drops an idle login after about 5) have passed since
+// the last reload or fetch. Times in ms.
 export function keepaliveDue(now, last, env = {}) {
-  if (String(env.VERO_KEEPALIVE ?? '1') === '0') return false;
+  if (String(env.VERO_KEEPALIVE ?? '0') !== '1') return false;
   const min = Number(env.VERO_KEEPALIVE_MIN ?? 2);
   return Number.isFinite(min) && min > 0 && now - last >= min * 60000;
 }
@@ -119,4 +121,21 @@ export function clickLog(message) {
 // login redirect's one-time code reached the click log).
 export function scrubUrls(text) {
   return String(text).replace(/(https?:\/\/[^\s?#"']+)[?#][^\s"']*/g, '$1?<scrubbed>');
+}
+
+// maskText(text, keep): a control's text for a view-shape record: kept when
+// it is one of the cnf labels (`keep`), else only its shape: a-z -> a,
+// A-Z -> A, digits -> 9, other characters kept, at most 40 characters. No
+// page data leaves the page: a name, a date or an amount keeps only its form.
+export function maskText(text, keep = []) {
+  const t = String(text ?? '').trim().replace(/\s+/g, ' ');
+  if (!t) return '';
+  if (keep.some((k) => k && t.toLowerCase() === String(k).toLowerCase())) return t;
+  return t.replace(/\p{Lu}/gu, 'A').replace(/\p{Ll}/gu, 'a').replace(/\p{Nd}/gu, '9').slice(0, 40);
+}
+
+// maskPath(url): the URL's path and hash only, digits as 9 (no host, no
+// query): enough to tell views apart, nothing to replay.
+export function maskPath(url) {
+  try { const u = new URL(url); return (u.pathname + u.hash).replace(/\d/g, '9'); } catch { return ''; }
 }

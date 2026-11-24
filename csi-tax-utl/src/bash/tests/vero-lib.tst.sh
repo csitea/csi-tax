@@ -10,7 +10,7 @@
 #   6. Only PUT/PATCH/DELETE count as writes; isPdf reads the magic bytes
 #   7. The namer skips a sha256 the index holds and continues the day's NN
 #   8. The weekly compare tells new from changed
-#   9. The keep-alive is due after 2 min by default, never with VERO_KEEPALIVE=0
+#   9. The keep-alive is off by default; with VERO_KEEPALIVE=1 due after 2 min
 #------------------------------------------------------------------------------
 set -uo pipefail
 source "$(dirname "$0")/vero-test-lib.inc.sh"
@@ -43,10 +43,12 @@ check 7 "namer: skip known sha, continue NN" "b.pdf 2026-03-04_02_Paatos.pdf" \
   "const p=V.plan([{arrival_date:'2026-03-04',type:'Päätös',file:'a.pdf',sha256:'s1'},{arrival_date:'2026-03-04',type:'Päätös',file:'b.pdf',sha256:'s2'}],[{arrival_date:'2026-03-04',sha256:'s1'}]); console.log(p.map(l=>{const c=l.split('\t');return c[0]+' '+c[9]}).join(';'))"
 check 8 "weekly compare" "1 1" \
   "const prev=[{kind:'document',type:'A',tax_type:'',period:'',sha256:'1'}]; const idx=[...prev,{kind:'document',type:'A',tax_type:'',period:'',sha256:'2'},{kind:'document',type:'B',tax_type:'',period:'',sha256:'3'}]; const c=W.compare(idx,prev); console.log(c.added.length+' '+c.changed.length)"
-check 9 "keep-alive due" "false true false true false" \
-  "console.log([L.keepaliveDue(119999,0),L.keepaliveDue(120000,0),L.keepaliveDue(999999,0,{VERO_KEEPALIVE:'0'}),L.keepaliveDue(60000,0,{VERO_KEEPALIVE_MIN:'1'}),L.keepaliveDue(9e9,0,{VERO_KEEPALIVE_MIN:'0'})].join(' '))"
+check 9 "keep-alive off by default, due after 2 min with VERO_KEEPALIVE=1" "false false true false true false" \
+  "const on={VERO_KEEPALIVE:'1'}; console.log([L.keepaliveDue(9e9,0),L.keepaliveDue(119999,0,on),L.keepaliveDue(120000,0,on),L.keepaliveDue(999999,0,{VERO_KEEPALIVE:'0'}),L.keepaliveDue(60000,0,{...on,VERO_KEEPALIVE_MIN:'1'}),L.keepaliveDue(9e9,0,{...on,VERO_KEEPALIVE_MIN:'0'})].join(' '))"
 check 10 "click log keeps why a click did not land" "<div class=ov> intercepts pointer events|waiting for element to be visible, enabled and stable|2" \
   "const m='locator.click: Timeout 30000ms exceeded.\\nCall log:\\n  - waiting for element to be visible, enabled and stable\\n  - <div class=ov> intercepts pointer events\\n  - <div class=ov> intercepts pointer events\\n  - some other line'; const c=L.clickLog(m); console.log(c[1]+'|'+c[0]+'|'+c.length)"
 check 11 "urls lose their query" "go https://id.example.com/return?<scrubbed> x https://a.example.com/p" \
   "console.log(L.scrubUrls('go https://id.example.com/return?code=abc&state=d x https://a.example.com/p'))"
+check 12 "mask: labels kept, data only as its shape" "Saldoerittely|Aaaaaaaaaaaaa 99.99.9999|9 999,99 €|/_/#9" \
+  "console.log([L.maskText(' Saldoerittely ',['Saldoerittely']),L.maskText('Verotuspäätös 12.03.2026'),L.maskText('1 234,50 €'),L.maskPath('https://h.example.com/_/?a=1#3')].join('|'))"
 finish

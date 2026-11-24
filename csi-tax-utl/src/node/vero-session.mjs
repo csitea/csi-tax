@@ -12,9 +12,10 @@
 // Every PUT / PATCH / DELETE request is aborted (read-only in OmaVero).
 // Each fetch loads the step code fresh (a copy of src/node/vero-*.mjs under
 // VERO_SESSION_DIR/code/), so a fix to the steps needs no new window and no
-// new login. Between fetches a second tab reloads the start page every
-// VERO_KEEPALIVE_MIN minutes (default 2; VERO_KEEPALIVE=0 turns it off) so
-// OmaVero does not drop the idle login; it reads only and clicks nothing.
+// new login. With VERO_KEEPALIVE=1 (OFF by default since run 13) a second
+// tab reloads the start page every VERO_KEEPALIVE_MIN minutes (default 2)
+// between fetches; it reads only and clicks nothing. A request with
+// "record": true writes each view's shape (labels/structure only).
 import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -81,7 +82,7 @@ async function serve(s, id, req) {
     mkdirSync(req.out, { recursive: true, mode: 0o700 });
     const { runFetch, waitForLogin } = await steps(id);
     await waitForLogin(s.page, UI, Number(req.login_timeout_s ?? 900), logFn);
-    rc = await runFetch({ ctx: s.ctx, page: s.page, ui: UI, base: BASE, year: Number(req.year), out: req.out, logFn });
+    rc = await runFetch({ ctx: s.ctx, page: s.page, ui: UI, base: BASE, year: Number(req.year), out: req.out, logFn, record: req.record === true });
   } catch (e) {
     logFn(`FATAL ${e.message.split('\n')[0]}`);
     rc = 2;

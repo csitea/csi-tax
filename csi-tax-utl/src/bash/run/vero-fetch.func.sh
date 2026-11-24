@@ -23,6 +23,8 @@
 # @param VERO_LOGIN_TIMEOUT_S (optional) - seconds the owner has to log in, default 900
 # @param VERO_FETCH_TIMEOUT_S (optional) - seconds to wait for the run, default 3600
 # @param VERO_NODE_BIN (optional) - default node
+# @param VERO_RECORD_SHAPES (optional) - 1 writes each view's shape (labels and structure only, no page data) to <run>/shapes/
+# @param VERO_KEEPALIVE (optional) - 1 turns on the keep-alive reload in a second tab (OFF by default since run 13)
 # @param DRY_RUN (optional) - 1 (default) prints the plan; 0 runs it
 # @example VERO_BASE_URL=<omavero url> ./run -a do_vero_fetch
 # @example VERO_BASE_URL=<omavero url> VERO_YEAR=2026 DRY_RUN=0 ./run -a do_vero_fetch
@@ -48,7 +50,8 @@ do_vero_fetch() {
   mkdir -p "$run" && chmod 700 "$run"
   vero_session_start "$node" "$node_dir" "$sdir" || return $?
   id="$(date +%Y%m%dT%H%M%S)-$$"
-  printf '{"out":"%s","year":%s,"login_timeout_s":%s}\n' "$run" "$year" "${VERO_LOGIN_TIMEOUT_S:-900}" >"$sdir/requests/$id.json.tmp"
+  printf '{"out":"%s","year":%s,"login_timeout_s":%s,"record":%s}\n' "$run" "$year" "${VERO_LOGIN_TIMEOUT_S:-900}" \
+    "$([[ "${VERO_RECORD_SHAPES:-0}" == 1 ]] && echo true || echo false)" >"$sdir/requests/$id.json.tmp"
   mv "$sdir/requests/$id.json.tmp" "$sdir/requests/$id.json"
   rc=$(vero_session_wait "$sdir" "$id") || return $?
   if ((rc != 0)); then

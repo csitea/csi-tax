@@ -17,10 +17,24 @@ import {
   arrivalDate, clickLog, dueDate, inYear, isPdf,
   manifestRow, MANIFEST_COLUMNS, driveCategory,
 } from './vero-lib.mjs';
-import { clickControl, clickEl, describeMatches, findControl, pageState, retrieveDoc } from './vero-click.mjs';
+import { clickControl, clickEl, describeMatches, findControl, pageState, retrieveDoc, viewShape } from './vero-click.mjs';
 
 // One run's settings and results; set by runFetch, read by the steps.
 let BASE, YEAR, OUT, UI, rows, log;
+// RECORD: write each view's shape to OUT/shapes/ (the request's record flag;
+// labels and structure only, see viewShape). STEP: the step running now.
+let RECORD = false, STEP = '', SHAPES = 0;
+
+// shape: record the view now, as OUT/shapes/NN-<step>-<what>.json (0600).
+async function shape(page, what) {
+  if (!RECORD) return;
+  const keep = [...Object.values(UI.tabs), ...Object.values(UI.links), ...UI.forbidden_clicks];
+  const s = await viewShape(page, keep).catch((e) => ({ error: e.message.split('\n')[0] }));
+  const dir = join(OUT, 'shapes');
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  SHAPES++;
+  writeFileSync(join(dir, `${String(SHAPES).padStart(2, '0')}-${STEP}-${what}.json`), JSON.stringify(s, null, 1), { mode: 0o600 });
+}
 
 function sha256(buf) { return createHash('sha256').update(buf).digest('hex'); }
 
@@ -76,6 +90,7 @@ async function go(page, name) {
   const before = sha256(await mainText(page).catch(() => ''));
   await counted(page, () => click(page, name));
   const t = await changedText(page, before);
+  await shape(page, `after-${name.replace(/[^\p{L}\p{N}]+/gu, '_')}`);
   if (t === null) throw new Error(`clicked "${name}" but the page did not change in 15 s`);
   return t;
 }
@@ -197,6 +212,7 @@ async function pdfRows(ctx, page, links, source) {
 async function stepFront(ctx, page) {
   await home(page);
   if (sameHost(page.url())) FRONT_URL = page.url();
+  await shape(page, 'front');
   save('pages', 'front.txt', await mainText(page));
 }
 
@@ -292,7 +308,8 @@ const STEP_TARGETS = {
 };
 const label = (k) => UI.tabs[k] || UI.links[k];
 
-export async function runFetch({ ctx, page, ui, base, year, out, logFn }) {
+export async function runFetch({ ctx, page, ui, base, year, out, logFn, record = false }) {
+  RECORD = !!record; SHAPES = 0;
   BASE = base; YEAR = year; OUT = out; UI = ui; rows = []; log = logFn; DEPTH = 0; FRONT_URL = null;
   if (LIVE && !LIVE.isClosed()) page = LIVE;
   else if (page.isClosed()) page = await livePage(ctx, page, ui, base);
@@ -301,6 +318,7 @@ export async function runFetch({ ctx, page, ui, base, year, out, logFn }) {
   for (const [idx, [name, step]] of steps.entries()) {
     // visibility and focus at every step (dispatch c-002 481b549c): a
     // background window draws no frames (run 9).
+    STEP = name;
     log(`PAGE ${name} ${JSON.stringify(await pageState(page))}`);
     try {
       await step(ctx, page); log(`OK ${name}`);
@@ -316,6 +334,7 @@ export async function runFetch({ ctx, page, ui, base, year, out, logFn }) {
       }
       log(`DIALOGS ${name} ${JSON.stringify(await dialogs(page))}`);
       log(`PAGE ${name} at failure ${JSON.stringify(await pageState(page))}`);
+      await shape(page, 'at-failure');
       log(`PROBE ${name} ${JSON.stringify(await probe(page))}`);
       // stop at the first failure (dispatch rule for live runs): the next
       // steps start from a page in an unknown state.
@@ -330,6 +349,6 @@ export async function runFetch({ ctx, page, ui, base, year, out, logFn }) {
 
 // for vero-steps.tst.sh only: the steps on a local fixture.
 export const _test = {
-  init({ base, ui, out, logFn = () => {} }) { BASE = base; UI = ui; OUT = out; rows = []; log = logFn; DEPTH = 0; FRONT_URL = null; },
+  init({ base, ui, out, logFn = () => {}, record = false }) { BASE = base; UI = ui; OUT = out; rows = []; log = logFn; DEPTH = 0; FRONT_URL = null; RECORD = record; SHAPES = 0; STEP = 'test'; },
   stepFront, stepBalance, home, depth: () => DEPTH, setDepth: (n) => { DEPTH = n; },
 };

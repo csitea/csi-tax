@@ -39,9 +39,14 @@ DRY_RUN=0 ./run -a do_vero_session_stop
 ```
 
 OmaVero drops an idle login after about 5 minutes (the owner's estimate) and
-may cap a session at about 2 hours (not measured). Between runs the session
-reloads the start page in a second tab every `VERO_KEEPALIVE_MIN` minutes
-(default 2; `VERO_KEEPALIVE=0` turns it off): read-only, no click. When the
+may cap a session at about 2 hours (not measured). The keep-alive is OFF by
+default. In run 13 (2026-11-24) the login was lost twice around a keep-alive reload of the start
+page in a second tab (unproven). `VERO_KEEPALIVE=1` turns it on: a second tab
+reloads the start page every `VERO_KEEPALIVE_MIN` minutes (default 2), read only,
+no click. `VERO_RECORD_SHAPES=1` writes each view's shape to `<run>/shapes/`
+for offline fixes: the masked path, every control with its text kept only
+when it is a cnf label (any other text is reduced to its form, `Aaaa 99.99.9999`),
+and each table's row and column count. No page data. When the
 login is gone anyway, the window shows the login again and the next run
 waits for the owner. Each run loads the step code as it is on disk, so a
 fix to the steps needs no new window. A run closes only the document tabs

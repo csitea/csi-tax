@@ -11,7 +11,7 @@
 // what was found. Only VISIBLE matches count: run 4 found a hidden
 // duplicate first and its click timed out. vero-click.tst.sh runs it on a
 // local HTML fixture.
-import { isForbiddenLabel } from './vero-lib.mjs';
+import { isForbiddenLabel, maskPath, maskText } from './vero-lib.mjs';
 
 const ROLES = ['link', 'tab', 'button'];
 const SCOPE = 'main, nav, header, [role="tablist"], [role="navigation"]';
@@ -183,4 +183,21 @@ export async function retrieveDoc(ctx, page, link, forbidden, retrieveMark, time
     ctx.off('page', onPage);
     for (const p of mine()) await p.close().catch(() => {});
   }
+}
+
+// viewShape(page, keep): the shape of the view for offline fixes (VERO_RECORD
+// _SHAPES): the masked path, every control (tag, role, href, visible, in
+// main, masked text) and every table's row/column count. Texts are masked
+// in node before anything is written (maskText); no page data is kept.
+export async function viewShape(page, keep) {
+  const raw = await page.evaluate(() => ({
+    url: location.href,
+    controls: [...document.querySelectorAll('a, button, input, select, [role=tab], [role=tablist], [role=link], [role=button], [onclick]')]
+      .slice(0, 300).map((e) => ({ tag: e.tagName.toLowerCase(), role: e.getAttribute('role') || '', type: e.getAttribute('type') || '',
+        href: e.hasAttribute('href'), onclick: e.hasAttribute('onclick'), selected: e.getAttribute('aria-selected') === 'true',
+        visible: !!(e.offsetWidth || e.offsetHeight), main: !!e.closest('main'), text: (e.innerText || e.value || '').slice(0, 200) })),
+    tables: [...document.querySelectorAll('table')].slice(0, 50).map((t) => ({ rows: t.rows.length,
+      cols: Math.max(0, ...[...t.rows].map((r) => r.cells.length)), main: !!t.closest('main'), visible: !!(t.offsetWidth || t.offsetHeight) })),
+  }));
+  return { path: maskPath(raw.url), controls: raw.controls.map((c) => ({ ...c, text: maskText(c.text, keep) })), tables: raw.tables };
 }

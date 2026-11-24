@@ -9,6 +9,8 @@
 #   4. Without that URL, home() goes back over the run's own clicks only
 #   5. With no own click to go back over, home() FAILs and stays on host
 #   6. A back step that would leave the host goes forward again and FAILs
+#   7. The view-shape recorder writes the views with labels kept and every
+#      other text masked (no page data)
 # Needs the module's playwright and its firefox build; without them it
 # prints SKIP, which the fast tier counts as a failure.
 #------------------------------------------------------------------------------
@@ -18,7 +20,10 @@ export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-${XDG_CACHE_HOME:-$
 source "$(dirname "$0")/vero-test-lib.inc.sh"
 
 if [[ ! -d "$MOD_ROOT/node_modules/playwright" ]]; then
-  echo "SKIP: no playwright in $MOD_ROOT/node_modules (npm ci)"; finish
+  echo "SKIP: no playwright in $MOD_ROOT/node_modules (npm ci)"; [[ "$(v t7files)" == "01-test-front.json,02-test-after-Saldoerittely.json" ]] && pass "7a. shapes written per view" || fail "7a. $(v t7files)"
+[[ "$(v t7texts)" == "Omat verolajit|Omat verolajit|Siirry seuraavalle sivulle" ]] && pass "7b. labels kept in the shape" || fail "7b. $(v t7texts)"
+grep -rq "Saldo sivu" "$T/o1/shapes" && fail "7c. page text leaked into a shape" || pass "7c. no page text in the shapes"
+finish
 fi
 
 cat >"$T/site.html" <<'HTML'
@@ -60,13 +65,16 @@ const out = {};
 const host = () => new URL(page.url()).host;
 const tryHome = () => S.home(page).then(() => 'front', (e) => e.message);
 // 1-3
-S.init({ base: B, ui, out: '$T/o1' });
+S.init({ base: B, ui, out: '$T/o1', record: true });
 await page.goto(B + '#front');
 await S.stepFront(null, page);
 await S.stepBalance(null, page);
 const files = readdirSync('$T/o1/pages').filter((f) => f.startsWith('balance-')).sort();
 out.t1 = files.join(',');
 out.t2 = files.map((f) => readFileSync('$T/o1/pages/' + f, 'utf8').trim().split('\n')[0]).join('|');
+out.t7files = readdirSync('$T/o1/shapes').sort().join(',');
+const sh = JSON.parse(readFileSync('$T/o1/shapes/' + readdirSync('$T/o1/shapes').sort()[1], 'utf8'));
+out.t7texts = sh.controls.map((c) => c.text).join('|');
 out.t3 = await tryHome(); out.t3hash = new URL(page.url()).hash;
 // 4
 S.init({ base: B, ui, out: '$T/o2' });
@@ -91,7 +99,10 @@ JS
 res=$(node "$T/run.mjs" 2>&1)
 if ! jq -e . >/dev/null 2>&1 <<<"$res"; then
   grep -qiE "Executable doesn.t exist|npx playwright install" <<<"$res" && { echo "SKIP: no firefox build (npx playwright install firefox)"; finish; }
-  fail "fixture run: $res"; finish
+  fail "fixture run: $res"; [[ "$(v t7files)" == "01-test-front.json,02-test-after-Saldoerittely.json" ]] && pass "7a. shapes written per view" || fail "7a. $(v t7files)"
+[[ "$(v t7texts)" == "Omat verolajit|Omat verolajit|Siirry seuraavalle sivulle" ]] && pass "7b. labels kept in the shape" || fail "7b. $(v t7texts)"
+grep -rq "Saldo sivu" "$T/o1/shapes" && fail "7c. page text leaked into a shape" || pass "7c. no page text in the shapes"
+finish
 fi
 v() { jq -r ".$1" <<<"$res"; }
 [[ "$(v t1)" == "balance-1.txt,balance-2.txt,balance-3.txt" ]] && pass "1. unchanged 'next' click stops the loop (3 pages)" || fail "1. $(v t1)"
@@ -100,4 +111,7 @@ v() { jq -r ".$1" <<<"$res"; }
 [[ "$(v t4)" == front && "$(v t4hash)" == "#front" && "$(v t4depth)" == 3 ]] && pass "4. home goes back over the run's own 3 clicks" || fail "4. $(v t4) $(v t4hash) depth=$(v t4depth)"
 [[ "$(v t5)" == *"no own click left"* && "$(v t5host)" == omavero.test ]] && pass "5. no own click: FAIL, still on host" || fail "5. $(v t5) $(v t5host)"
 [[ "$(v t6)" == *"would leave OmaVero"* && "$(v t6host)" == omavero.test ]] && pass "6. a back step off host goes forward and FAILs" || fail "6. $(v t6) $(v t6host)"
+[[ "$(v t7files)" == "01-test-front.json,02-test-after-Saldoerittely.json" ]] && pass "7a. shapes written per view" || fail "7a. $(v t7files)"
+[[ "$(v t7texts)" == "Omat verolajit|Omat verolajit|Siirry seuraavalle sivulle" ]] && pass "7b. labels kept in the shape" || fail "7b. $(v t7texts)"
+grep -rq "Saldo sivu" "$T/o1/shapes" && fail "7c. page text leaked into a shape" || pass "7c. no page text in the shapes"
 finish
