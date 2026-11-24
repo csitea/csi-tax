@@ -35,8 +35,8 @@ function save(sub, name, buf) {
 // click: the control with this label (vero-click.mjs: exact role name,
 // chevron-tolerant role name, then exact visible text); forbidden labels
 // are refused before any lookup.
-async function click(page, name) {
-  await clickControl(page, name, UI.forbidden_clicks);
+async function click(page, name, opts = {}) {
+  await clickControl(page, name, UI.forbidden_clicks, opts.timeoutMs || 30000, { busy: UI.selectors.busy, ...opts });
 }
 
 async function mainText(page) {
@@ -54,14 +54,15 @@ export async function waitForLogin(page, ui, loginS, logFn) {
 }
 
 // home: back to the front page; every step starts here. It clicks the
-// front tab; a sub view without it (the decisions view, run 5) is left by
+// front tab, unless that tab is already the selected one (a second click
+// only reloads the view and the busy layer redraws the tab bar, run 7);
+// a sub view without it (the decisions view, run 5) is left by
 // going back. Reloading the start URL is the last resort: OmaVero aborts it
 // (NS_BINDING_ABORTED, run 5), so its error is ignored and the login text
 // decides.
 async function home(page) {
   for (let i = 0; i < 5; i++) {
-    const tab = await findControl(page, UI.tabs.front, UI.forbidden_clicks, 3000).catch(() => null);
-    if (tab) { await tab.click(); await page.waitForLoadState('networkidle').catch(() => {}); return; }
+    try { await click(page, UI.tabs.front, { skipSelected: true, timeoutMs: 3000 }); return; } catch { /* not on this view */ }
     await page.goBack().catch(() => {});
     await page.waitForLoadState('networkidle').catch(() => {});
   }
@@ -119,13 +120,11 @@ async function pdfRows(ctx, page, links, source) {
 
 async function stepFront(ctx, page) {
   await home(page);
-  await click(page, UI.tabs.front);
   save('pages', 'front.txt', await mainText(page));
 }
 
 async function stepBalance(ctx, page) {
   await home(page);
-  await click(page, UI.tabs.front);
   await click(page, UI.links.balance);
   for (let n = 1; n <= 50; n++) {
     save('pages', `balance-${n}.txt`, await mainText(page));
@@ -180,7 +179,6 @@ async function stepMessages(ctx, page) {
 
 async function stepPayments(ctx, page) {
   await home(page);
-  await click(page, UI.tabs.front);
   await click(page, UI.links.payments);
   await findControl(page, UI.links.payments_csv, UI.forbidden_clicks);
   const links = page.getByRole('link', { name: UI.links.payments_csv })

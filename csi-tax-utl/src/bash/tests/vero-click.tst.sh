@@ -10,6 +10,8 @@
 #   5. A label outside main/nav/header is not clicked (times out)
 #   7. A hidden duplicate is skipped: the visible one is clicked
 #   8. A tab whose name carries a counter ("Viestit 3") is found by its label
+#   9. An already selected tab is not clicked again with skipSelected
+#  10. A click waits until the busy layer (.FastBusyOverlay) is hidden
 #   6. A control named harmlessly (aria-label) whose visible text is a
 #      forbidden action is refused after the lookup, not clicked
 # Needs the module's playwright and its firefox build
@@ -29,7 +31,8 @@ fi
 
 cat >"$T/fixture.html" <<'HTML'
 <html><body>
-<header><div role="tablist"><a onclick="hit('contact')">Yhteydenpito</a><a role="tab" href="#" onclick="hit('tasks');return false">Viestit 3</a></div></header>
+<div class="FastBusyOverlay" id="busy" style="position:fixed;inset:0;display:none"></div>
+<header><div role="tablist"><a role="tab" aria-selected="true" href="#" onclick="hit('front');return false">Omat verolajit</a><a role="tab" href="#" onclick="busyFor(600);hit('contact2');return false">Asiakastiedot</a><a onclick="hit('contact')">Yhteydenpito</a><a role="tab" href="#" onclick="hit('tasks');return false">Viestit 3</a></div></header>
 <main>
   <div style="display:none"><a href="#" onclick="hit('hidden');return false">Saldoerittely</a></div>
   <div><a href="#" onclick="hit('balance');return false"><span aria-hidden="false">›</span> Saldoerittely</a></div>
@@ -38,7 +41,8 @@ cat >"$T/fixture.html" <<'HTML'
   <a href="#" aria-label="Lomake" onclick="hit('form');return false">Tee uusi ilmoitus</a>
 </main>
 <footer><span onclick="hit('footer')">Tehtävät</span></footer>
-<script>window.clicks=[];function hit(x){window.clicks.push(x)}</script>
+<script>window.clicks=[];function hit(x){window.clicks.push(x)}
+function busyFor(ms){const b=document.getElementById('busy');b.style.display='block';setTimeout(()=>{b.style.display='none';window.clicks.push('idle')},ms)}</script>
 </body></html>
 HTML
 
@@ -59,6 +63,9 @@ await tryClick('c4', 'Siirrä arkistoon', 2000);
 await tryClick('c5', 'Tehtävät', 1000);
 await tryClick('c6', 'Lomake', 1000);
 await tryClick('c8', 'Viestit', 2000);
+out.c9 = await clickControl(page, 'Omat verolajit', forbidden, 2000, { skipSelected: true });
+out.c10 = await clickControl(page, 'Asiakastiedot', forbidden, 2000, { skipSelected: true });
+out.c10b = await page.evaluate(() => window.clicks.slice(-2).join(','));
 out.clicks = await page.evaluate(() => window.clicks.join(','));
 console.log(JSON.stringify(out));
 await b.close();
@@ -76,5 +83,7 @@ v() { jq -r ".$1" <<<"$res"; }
 [[ "$(v c5)" == "no control named \"Tehtävät\" within 1000 ms" ]] && pass "5. label outside main/nav not clicked" || fail "5. $(v c5)"
 [[ "$(v c6)" == "refused forbidden click: Tee uusi ilmoitus" ]] && pass "6. forbidden text refused after lookup" || fail "6. $(v c6)"
 [[ "$(v c8)" == clicked ]] && pass "8. tab with a counter found" || fail "8. $(v c8)"
-[[ "$(v clicks)" == "contact,balance,search,tasks" ]] && pass "clicks were exactly contact,balance,search,tasks" || fail "clicks: $(v clicks)"
+[[ "$(v c9)" == selected ]] && pass "9. selected tab not clicked again" || fail "9. $(v c9)"
+[[ "$(v c10)" == clicked && "$(v c10b)" == "contact2,idle" ]] && pass "10. click returns after the busy layer is hidden" || fail "10. $(v c10) $(v c10b)"
+[[ "$(v clicks)" == "contact,balance,search,tasks,contact2,idle" ]] && pass "clicks were exactly contact,balance,search,tasks,contact2,idle" || fail "clicks: $(v clicks)"
 finish

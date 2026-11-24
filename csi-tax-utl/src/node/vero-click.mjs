@@ -55,11 +55,33 @@ export async function findControl(page, name, forbidden, timeoutMs = 30000) {
   }
 }
 
-// clickControl: findControl, click, wait for the page to settle.
-export async function clickControl(page, name, forbidden, timeoutMs) {
-  const loc = await findControl(page, name, forbidden, timeoutMs);
-  await loc.click();
+// OmaVero's "busy" layer (run 7: div.FastBusyOverlay was up while the tab
+// bar kept being redrawn, and the click on the tab timed out: "element was
+// detached from the DOM, retrying"). cnf selectors.busy overrides it.
+export const DEFAULT_BUSY = '.FastBusyOverlay';
+
+// settle: the page is quiet: network idle and the busy layer hidden.
+export async function settle(page, busy = DEFAULT_BUSY, timeoutMs = 30000) {
   await page.waitForLoadState('networkidle').catch(() => {});
+  await page.locator(busy).filter({ visible: true }).first().waitFor({ state: 'hidden', timeout: timeoutMs }).catch(() => {});
+}
+
+// isSelected: a tab that is already the open one (aria-selected on it or
+// its tab item). Clicking it again only reloads the view (run 7).
+export async function isSelected(loc) {
+  return loc.evaluate((e) => [e, e.parentElement].some((x) => x && x.getAttribute('aria-selected') === 'true')).catch(() => false);
+}
+
+// clickControl: settle, findControl, click (unless opts.skipSelected and it
+// is already selected), settle again. Returns 'clicked' or 'selected'.
+export async function clickControl(page, name, forbidden, timeoutMs, opts = {}) {
+  const busy = opts.busy || DEFAULT_BUSY;
+  await settle(page, busy);
+  const loc = await findControl(page, name, forbidden, timeoutMs);
+  if (opts.skipSelected && await isSelected(loc)) return 'selected';
+  await loc.click();
+  await settle(page, busy);
+  return 'clicked';
 }
 
 // retrieveDoc(ctx, page, link, forbidden, retrieveMark): the bytes of the

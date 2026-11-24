@@ -20,7 +20,8 @@
     "inbox_row_link": "main a[data-linkid^=\"Dc-f-\"]",
     "archive_row_link_text": "\\(pdf\\)",
     "archive_date_inputs": "main input[type=text]",
-    "retrieve_url": "/Retrieve/"
+    "retrieve_url": "/Retrieve/",
+    "busy": ".FastBusyOverlay"
   },
   "logged_in_text": "Omat verolajit",
   "forbidden_clicks": [
