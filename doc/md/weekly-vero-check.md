@@ -138,13 +138,20 @@ else the newest open tab, else ONE new tab in the same window and profile. It
 never opens a new window. While it waits for the login, any tab of the window
 counts (`vero-tabs.tst.sh`).
 
-Every step starts from the front page by clicking its tab. When the tab is
-not on the page, the step FAILs: the run never goes back in the browser history
-and never reloads the start URL (run 10, 2026-11-24, went back past
-OmaVero into the bank login pages and ended the login). A click on a link
-that opens another view counts only when the URL or the main text changed
-within 15 s, so a click that did nothing is a FAIL, never an OK that saves
-the wrong page. Logged URLs lose their query string (`?<scrubbed>`).
+Every step starts from the front page by clicking its tab. A sub view
+without the tab bar (the balance view, run 12) is left in this order:
+1. the URL stepFront stood on, if it is on the OmaVero host;
+2. back in the browser history, but only over the run's own clicks since the
+   front page. The host is checked after every step, and a step that would
+   leave OmaVero goes forward again and FAILs.
+3. otherwise the step FAILs.
+The run never reloads the start URL and never goes back past its own clicks
+(run 10, 2026-11-24, did, into the bank login pages, and that ended the login).
+A click on a link that opens another view counts only when the main text
+changed and then held still for 500 ms within 15 s, and the text saved is that new
+view. The balance 'next page' loop stops at the first click that changes
+nothing (run 12 saved 48 copies of one page). `vero-steps.tst.sh` drives
+these steps on a local fake OmaVero. Logged URLs lose their query string (`?<scrubbed>`).
 
 Every click first waits until the page is quiet: the network is idle and
 OmaVero's busy layer (cnf `selectors.busy`, `.FastBusyOverlay`) is hidden.

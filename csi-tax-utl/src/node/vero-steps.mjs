@@ -39,19 +39,45 @@ async function click(page, name, opts = {}) {
   await clickControl(page, name, UI.forbidden_clicks, opts.timeoutMs || 30000, { busy: UI.selectors.busy, ...opts });
 }
 
-// go: click a link that must open another view; OK only when the URL or
-// the main text changed within 15 s (run 10: a click that did nothing was
-// logged OK and the front page was saved as the balance page).
-async function go(page, name) {
-  const look = async () => `${page.url()}\n${sha256(await mainText(page).catch(() => ''))}`;
-  const before = await look();
-  await click(page, name);
-  const end = Date.now() + 15000;
+// DEPTH: the history entries the run's own clicks made since it last stood
+// on the front page; home() goes back at most that far (run 12).
+let DEPTH = 0;
+// FRONT_URL: the URL stepFront stood on; home() goes there first (same
+// host only) before any back step (dispatch c-002 680943a3).
+let FRONT_URL = null;
+const sameHost = (url) => { try { return new URL(url).host === new URL(BASE).host; } catch { return false; } };
+
+// counted: run a click; a URL change is one more own history entry.
+async function counted(page, fn) {
+  const before = page.url();
+  const r = await fn();
+  if (page.url() !== before) DEPTH++;
+  return r;
+}
+
+// changedText: the main text once it differs from `before` and holds still
+// for 500 ms, or null after ms (run 12: the text read right after the click
+// was still the front page).
+async function changedText(page, before, ms = 15000) {
+  const end = Date.now() + ms;
+  let last = null;
   while (Date.now() < end) {
-    if (await look() !== before) return;
-    await page.waitForTimeout(250);
+    const t = await mainText(page).catch(() => '');
+    if (sha256(t) !== before && t === last) return t;
+    last = sha256(t) !== before ? t : null;
+    await page.waitForTimeout(500);
   }
-  throw new Error(`clicked "${name}" but the page did not change in 15 s`);
+  return null;
+}
+
+// go: click a link that must open another view; OK only when the main text
+// changed (and settled) within 15 s; returns that text.
+async function go(page, name) {
+  const before = sha256(await mainText(page).catch(() => ''));
+  await counted(page, () => click(page, name));
+  const t = await changedText(page, before);
+  if (t === null) throw new Error(`clicked "${name}" but the page did not change in 15 s`);
+  return t;
 }
 
 async function mainText(page) {
@@ -95,11 +121,28 @@ export async function waitForLogin(page, ui, loginS, logFn, base = '') {
 // a view without the tab FAILs the step: no history back and no reload of
 // the start URL (run 10: going back left OmaVero for the login pages).
 async function home(page) {
-  // never history back or a start-URL reload: run 10 went back past OmaVero
-  // into the bank login chain and ended the login. The tab or a FAIL.
-  try { await click(page, UI.tabs.front, { skipSelected: true, timeoutMs: 10000 }); } catch (e) {
-    throw new Error(`front tab not on this page (no history back, run 10): ${e.message.split('\n')[0]}`);
+  // never a start-URL reload, and back in history only over the run's own
+  // clicks, each step checked to stay on the OmaVero host (run 10 went back
+  // past OmaVero into the bank login chain and ended the login).
+  const tab = () => click(page, UI.tabs.front, { skipSelected: true, timeoutMs: 5000 }).then(() => true, () => false);
+  if (await tab()) { DEPTH = 0; return; }
+  if (FRONT_URL && sameHost(FRONT_URL)) {
+    await page.goto(FRONT_URL).catch(() => {});
+    await page.waitForLoadState('networkidle').catch(() => {});
+    if (sameHost(page.url()) && await tab()) { DEPTH = 0; return; }
+    DEPTH++; // the goto is one more own history entry to go back over
   }
+  while (DEPTH > 0) {
+    await page.goBack().catch(() => {});
+    DEPTH--;
+    await page.waitForLoadState('networkidle').catch(() => {});
+    if (!sameHost(page.url())) {
+      await page.goForward().catch(() => {});
+      throw new Error('front tab not found: going back would leave OmaVero, stopped');
+    }
+    if (await tab()) { DEPTH = 0; return; }
+  }
+  throw new Error('front tab not on this page and no own click left to go back over');
 }
 
 // dialogs: for a failed step, what may cover the page: visible dialogs,
@@ -153,44 +196,47 @@ async function pdfRows(ctx, page, links, source) {
 
 async function stepFront(ctx, page) {
   await home(page);
+  if (sameHost(page.url())) FRONT_URL = page.url();
   save('pages', 'front.txt', await mainText(page));
 }
 
 async function stepBalance(ctx, page) {
   await home(page);
-  await go(page, UI.links.balance);
+  let text = await go(page, UI.links.balance);
   for (let n = 1; n <= 50; n++) {
-    save('pages', `balance-${n}.txt`, await mainText(page));
+    save('pages', `balance-${n}.txt`, text);
     const next = await findControl(page, UI.links.next_page, UI.forbidden_clicks, 3000).catch(() => null);
     if (!next || !(await next.isEnabled())) break;
-    await clickEl(next, 5000, UI.forbidden_clicks);
-    await page.waitForLoadState('networkidle').catch(() => {});
+    await counted(page, () => clickEl(next, 5000, UI.forbidden_clicks));
+    // the last page: 'next' changes nothing (run 12 saved 48 copies)
+    text = await changedText(page, sha256(text), 10000);
+    if (text === null) break;
   }
 }
 
 async function stepInbox(ctx, page) {
   await home(page);
-  await click(page, UI.tabs.contact);
+  await counted(page, () => click(page, UI.tabs.contact));
   await go(page, UI.links.decisions);
   await pdfRows(ctx, page, page.locator(UI.selectors.inbox_row_link), 'inbox');
 }
 
 async function stepArchive(ctx, page) {
   await home(page);
-  await click(page, UI.tabs.contact);
+  await counted(page, () => click(page, UI.tabs.contact));
   await go(page, UI.links.decisions);
   await go(page, UI.links.archive);
   const inputs = page.locator(UI.selectors.archive_date_inputs);
   await inputs.nth(0).fill(`1.1.${YEAR}`);
   await inputs.nth(1).fill(`31.12.${YEAR}`);
-  await click(page, UI.links.archive_search);
+  await counted(page, () => click(page, UI.links.archive_search));
   const rx = new RegExp(UI.selectors.archive_row_link_text, 'i');
   await pdfRows(ctx, page, page.locator(`${UI.selectors.main} a`).filter({ hasText: rx }), 'archive');
 }
 
 async function stepMessages(ctx, page) {
   await home(page);
-  await click(page, UI.tabs.contact);
+  await counted(page, () => click(page, UI.tabs.contact));
   await go(page, UI.links.messages);
   const n = await page.locator(`${UI.selectors.main} tr a`).count();
   for (let i = 0; i < n; i++) {
@@ -231,7 +277,7 @@ async function stepPayments(ctx, page) {
 
 async function stepTasks(ctx, page) {
   await home(page);
-  await click(page, UI.tabs.tasks);
+  await counted(page, () => click(page, UI.tabs.tasks));
   save('pages', 'tasks.txt', await mainText(page));
 }
 
@@ -247,7 +293,7 @@ const STEP_TARGETS = {
 const label = (k) => UI.tabs[k] || UI.links[k];
 
 export async function runFetch({ ctx, page, ui, base, year, out, logFn }) {
-  BASE = base; YEAR = year; OUT = out; UI = ui; rows = []; log = logFn;
+  BASE = base; YEAR = year; OUT = out; UI = ui; rows = []; log = logFn; DEPTH = 0; FRONT_URL = null;
   if (LIVE && !LIVE.isClosed()) page = LIVE;
   else if (page.isClosed()) page = await livePage(ctx, page, ui, base);
   let failed = 0;
@@ -281,3 +327,9 @@ export async function runFetch({ ctx, page, ui, base, year, out, logFn }) {
   log(`${rows.length} file(s), ${failed} failed step(s); manifest ${join(OUT, 'manifest.tsv')}`);
   return failed ? 3 : 0;
 }
+
+// for vero-steps.tst.sh only: the steps on a local fixture.
+export const _test = {
+  init({ base, ui, out, logFn = () => {} }) { BASE = base; UI = ui; OUT = out; rows = []; log = logFn; DEPTH = 0; FRONT_URL = null; },
+  stepFront, stepBalance, home, depth: () => DEPTH, setDepth: (n) => { DEPTH = n; },
+};
