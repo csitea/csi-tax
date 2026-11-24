@@ -168,8 +168,10 @@ The proposal:
 bash src/bash/tests/run-all-tests.sh
 ```
 
-No test opens a browser or reaches OmaVero, a bucket or the Drive: stub
-`node`, `gcloud` and `rclone` stand in, on fixture files with no real data.
+No test reaches OmaVero, a bucket or the Drive: stub `node`, `gcloud` and
+`rclone` stand in, on fixture files with no real data. One test,
+`vero-click.tst.sh`, runs the label lookup in a headless Firefox on a local
+HTML page; it needs section 3.1 done first.
 
 ## 7. Traps seen on the first, hand-made run
 

@@ -16,6 +16,7 @@ import {
   arrivalDate, dueDate, inYear, isForbiddenLabel, isPdf, isWriteRequest,
   manifestRow, MANIFEST_COLUMNS, driveCategory,
 } from './vero-lib.mjs';
+import { clickControl, findControl } from './vero-click.mjs';
 
 const env = (k, d) => process.env[k] ?? d;
 const BASE = env('VERO_BASE_URL');
@@ -36,15 +37,11 @@ function save(sub, name, buf) {
   return `${sub}/${name}`;
 }
 
-// click: a link, tab or button by its exact visible name; a forbidden label
-// is refused before any locator is touched.
+// click: the control with this label (vero-click.mjs: exact role name,
+// chevron-tolerant role name, then exact visible text); forbidden labels
+// are refused before any lookup.
 async function click(page, name) {
-  if (isForbiddenLabel(name, UI.forbidden_clicks)) throw new Error(`refused forbidden click: ${name}`);
-  const loc = page.getByRole('link', { name, exact: true })
-    .or(page.getByRole('tab', { name, exact: true }))
-    .or(page.getByRole('button', { name, exact: true })).first();
-  await loc.click();
-  await page.waitForLoadState('networkidle').catch(() => {});
+  await clickControl(page, name, UI.forbidden_clicks);
 }
 
 async function mainText(page) {
@@ -112,9 +109,9 @@ async function stepBalance(ctx, page) {
   await click(page, UI.links.balance);
   for (let n = 1; n <= 50; n++) {
     save('pages', `balance-${n}.txt`, await mainText(page));
-    const next = page.getByRole('link', { name: UI.links.next_page }).or(page.getByRole('button', { name: UI.links.next_page }));
-    if (!(await next.count()) || !(await next.first().isEnabled())) break;
-    await next.first().click();
+    const next = await findControl(page, UI.links.next_page, UI.forbidden_clicks, 3000).catch(() => null);
+    if (!next || !(await next.isEnabled())) break;
+    await next.click();
     await page.waitForLoadState('networkidle').catch(() => {});
   }
 }
@@ -161,7 +158,9 @@ async function stepMessages(ctx, page) {
 async function stepPayments(ctx, page) {
   await click(page, UI.tabs.front);
   await click(page, UI.links.payments);
-  const links = page.getByRole('link', { name: UI.links.payments_csv });
+  await findControl(page, UI.links.payments_csv, UI.forbidden_clicks);
+  const links = page.getByRole('link', { name: UI.links.payments_csv })
+    .or(page.locator('main').getByText(UI.links.payments_csv, { exact: true }));
   const today = new Date().toISOString().slice(0, 10);
   for (let i = 0; i < await links.count(); i++) {
     const [dl] = await Promise.all([page.waitForEvent('download'), links.nth(i).click()]);
