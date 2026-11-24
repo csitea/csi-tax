@@ -1,0 +1,9 @@
+{
+  "name": "csi-tax-utl",
+  "private": true,
+  "type": "module",
+  "description": "The OmaVero fetch of do_vero_fetch (Playwright, headed).",
+  "dependencies": {
+    "playwright": "1.56.1"
+  }
+}

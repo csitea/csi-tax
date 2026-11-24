@@ -1,0 +1,34 @@
+{
+  "_comment": "OmaVero labels the fetch navigates by (tab and link names, never the per-session #N hash). Mapped by hand on 2026-11-24. A label OmaVero renames is changed here, not in code.",
+  "tabs": {
+    "front": "Omat verolajit",
+    "contact": "Yhteydenpito",
+    "tasks": "Tehtävät"
+  },
+  "links": {
+    "balance": "Saldoerittely",
+    "next_page": "Siirry seuraavalle sivulle",
+    "decisions": "Avaa päätökset ja kirjeet",
+    "archive": "Arkisto",
+    "archive_search": "Hae",
+    "messages": "Avaa viestit",
+    "payments": "Suoritetut maksut ja palautukset",
+    "payments_csv": "Lataa tiedostona (csv)"
+  },
+  "selectors": {
+    "main": "main",
+    "inbox_row_link": "main a[data-linkid^=\"Dc-f-\"]",
+    "archive_row_link_text": "\\(pdf\\)",
+    "archive_date_inputs": "main input[type=text]",
+    "retrieve_url": "/Retrieve/"
+  },
+  "logged_in_text": "Omat verolajit",
+  "forbidden_clicks": [
+    "Siirrä arkistoon",
+    "Siirrä kaikki arkistoon",
+    "Lähetä uusi viesti",
+    "Tee *",
+    "Pyydä palautusta",
+    "Ilmoita tilinumero"
+  ]
+}
