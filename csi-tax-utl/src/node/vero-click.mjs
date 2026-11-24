@@ -7,7 +7,9 @@
 //   2. the same roles, the name allowed a leading/trailing chevron
 //   3. the exact visible text inside main, nav, header or a tablist
 // A forbidden label is refused before any lookup, and again on the text of
-// what was found. vero-click.tst.sh runs it on a local HTML fixture.
+// what was found. Only VISIBLE matches count: run 4 found a hidden
+// duplicate first and its click timed out. vero-click.tst.sh runs it on a
+// local HTML fixture.
 import { isForbiddenLabel } from './vero-lib.mjs';
 
 const ROLES = ['link', 'tab', 'button'];
@@ -22,15 +24,15 @@ export function chevronRx(name) {
 
 async function firstHit(page, name) {
   for (const role of ROLES) {
-    const l = page.getByRole(role, { name, exact: true });
+    const l = page.getByRole(role, { name, exact: true }).filter({ visible: true });
     if (await l.count()) return l.first();
   }
   const rx = chevronRx(name);
   for (const role of ROLES) {
-    const l = page.getByRole(role, { name: rx });
+    const l = page.getByRole(role, { name: rx }).filter({ visible: true });
     if (await l.count()) return l.first();
   }
-  const t = page.locator(SCOPE).getByText(name, { exact: true });
+  const t = page.locator(SCOPE).getByText(name, { exact: true }).filter({ visible: true });
   return (await t.count()) ? t.first() : null;
 }
 

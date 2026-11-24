@@ -1,31 +1,25 @@
-// OmaVero fetch, run by do_vero_fetch (never by hand): a HEADED browser on the
-// owner's desktop, the OWNER logs in himself, then this script reads and
-// downloads, read-only, everything of VERO_YEAR into VERO_OUT_DIR:
-//   pdf/<n>.pdf       decisions and letters (inbox + archive), then renamed by do_vero_file
+// The OmaVero fetch steps, run by vero-session.mjs in the one kept-open
+// browser: read-only, everything of a year into an out dir:
+//   pdf/<n>.pdf       decisions and letters (inbox + archive), renamed by do_vero_file
 //   msg/<n>.txt       messages (HTML only in OmaVero, saved as text)
 //   csv/<name>.csv    paid taxes and refunds (UTF-16LE, TAB, full history)
 //   pages/<key>.txt   front page, balance table pages, tasks (for the report)
 //   manifest.tsv      one row per file, MANIFEST_COLUMNS of vero-lib.mjs
-// It never types into the login, never stores a cookie (a fresh, discarded
-// browser context), never clicks a label of cnf forbidden_clicks, and aborts
-// every PUT / PATCH / DELETE request.
+// It never types into the login, never clicks a label of cnf forbidden_clicks
+// (the session also aborts every PUT / PATCH / DELETE). Each step starts from
+// the front page, so a step that fails leaves the next one a known page; a
+// failed step logs a label-only probe (role, name, visible) and no page data.
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  arrivalDate, dueDate, inYear, isForbiddenLabel, isPdf, isWriteRequest,
+  arrivalDate, dueDate, inYear, isForbiddenLabel, isPdf,
   manifestRow, MANIFEST_COLUMNS, driveCategory,
 } from './vero-lib.mjs';
 import { clickControl, findControl } from './vero-click.mjs';
 
-const env = (k, d) => process.env[k] ?? d;
-const BASE = env('VERO_BASE_URL');
-const YEAR = Number(env('VERO_YEAR', String(new Date().getFullYear())));
-const OUT = env('VERO_OUT_DIR');
-const UI = JSON.parse(readFileSync(env('VERO_UI_CNF'), 'utf8'));
-const LOGIN_S = Number(env('VERO_LOGIN_TIMEOUT_S', '900'));
-const rows = [];
-const log = (m) => console.log(`vero-fetch: ${m}`);
+// One run's settings and results; set by runFetch, read by the steps.
+let BASE, YEAR, OUT, UI, rows, log;
 
 function sha256(buf) { return createHash('sha256').update(buf).digest('hex'); }
 
@@ -48,10 +42,30 @@ async function mainText(page) {
   return page.locator(UI.selectors.main).first().innerText();
 }
 
-async function waitForLogin(page) {
-  log(`waiting up to ${LOGIN_S}s for the owner to log in in the browser window`);
-  await page.getByText(UI.logged_in_text).first().waitFor({ timeout: LOGIN_S * 1000 });
-  log('logged in');
+// waitForLogin: at once when the session is still logged in; else the
+// owner logs in in the window, within loginS seconds.
+export async function waitForLogin(page, ui, loginS, logFn) {
+  const marker = page.getByText(ui.logged_in_text).first();
+  if (await marker.isVisible().catch(() => false)) { logFn('logged in (session kept)'); return; }
+  logFn(`waiting up to ${loginS}s for the owner to log in in the browser window`);
+  await marker.waitFor({ timeout: loginS * 1000 });
+  logFn('logged in');
+}
+
+// home: back to the front page; every step starts here.
+async function home(page) {
+  await page.goto(BASE);
+  await page.waitForLoadState('networkidle').catch(() => {});
+}
+
+// probe: for a failed step, the controls whose text holds a cnf label, as
+// role / tag / name / visible: enough to fix a lookup, no page data.
+async function probe(page) {
+  const labels = [...Object.values(UI.tabs), ...Object.values(UI.links)];
+  return page.evaluate((ls) => [...document.querySelectorAll('a, button, [role], [onclick], [tabindex]')]
+    .map((e) => ({ tag: e.tagName.toLowerCase(), role: e.getAttribute('role') || '', href: e.hasAttribute('href'),
+      name: (e.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 60), visible: !!(e.offsetWidth || e.offsetHeight) }))
+    .filter((c) => ls.some((l) => c.name.includes(l))).slice(0, 40), labels).catch((e) => [`probe failed: ${e.message}`]);
 }
 
 // closeOthers: every tab but the main one. The first hand run took the wrong
@@ -100,11 +114,13 @@ async function pdfRows(ctx, page, links, source) {
 }
 
 async function stepFront(ctx, page) {
+  await home(page);
   await click(page, UI.tabs.front);
   save('pages', 'front.txt', await mainText(page));
 }
 
 async function stepBalance(ctx, page) {
+  await home(page);
   await click(page, UI.tabs.front);
   await click(page, UI.links.balance);
   for (let n = 1; n <= 50; n++) {
@@ -117,12 +133,14 @@ async function stepBalance(ctx, page) {
 }
 
 async function stepInbox(ctx, page) {
+  await home(page);
   await click(page, UI.tabs.contact);
   await click(page, UI.links.decisions);
   await pdfRows(ctx, page, page.locator(UI.selectors.inbox_row_link), 'inbox');
 }
 
 async function stepArchive(ctx, page) {
+  await home(page);
   await click(page, UI.tabs.contact);
   await click(page, UI.links.decisions);
   await click(page, UI.links.archive);
@@ -135,6 +153,7 @@ async function stepArchive(ctx, page) {
 }
 
 async function stepMessages(ctx, page) {
+  await home(page);
   await click(page, UI.tabs.contact);
   await click(page, UI.links.messages);
   const n = await page.locator(`${UI.selectors.main} tr a`).count();
@@ -156,6 +175,7 @@ async function stepMessages(ctx, page) {
 }
 
 async function stepPayments(ctx, page) {
+  await home(page);
   await click(page, UI.tabs.front);
   await click(page, UI.links.payments);
   await findControl(page, UI.links.payments_csv, UI.forbidden_clicks);
@@ -175,28 +195,25 @@ async function stepPayments(ctx, page) {
 }
 
 async function stepTasks(ctx, page) {
+  await home(page);
   await click(page, UI.tabs.tasks);
   save('pages', 'tasks.txt', await mainText(page));
 }
 
-async function run() {
-  if (!BASE || !OUT) throw new Error('VERO_BASE_URL and VERO_OUT_DIR must be set (do_vero_fetch sets them)');
-  const { chromium, firefox } = await import('playwright');
-  const engine = env('VERO_BROWSER', 'firefox') === 'chromium' ? chromium : firefox;
-  const browser = await engine.launch({ headless: false });
-  const ctx = await browser.newContext({ acceptDownloads: true, locale: 'fi-FI' });
-  await ctx.route('**/*', (r) => (isWriteRequest(r.request().method()) ? r.abort() : r.continue()));
-  const page = await ctx.newPage();
-  await page.goto(BASE);
-  await waitForLogin(page);
+// runFetch: the steps in order on the session's page; writes manifest.tsv
+// and returns 0, or 3 when a step failed.
+export async function runFetch({ ctx, page, ui, base, year, out, logFn }) {
+  BASE = base; YEAR = year; OUT = out; UI = ui; rows = []; log = logFn;
   let failed = 0;
   for (const [name, step] of Object.entries({ stepFront, stepBalance, stepInbox, stepArchive, stepMessages, stepPayments, stepTasks })) {
-    try { await step(ctx, page); log(`OK ${name}`); } catch (e) { failed++; log(`FAIL ${name}: ${e.message}`); }
+    try {
+      await step(ctx, page); log(`OK ${name}`);
+    } catch (e) {
+      failed++; log(`FAIL ${name}: ${e.message.split('\n')[0]}`);
+      log(`PROBE ${name} ${JSON.stringify(await probe(page))}`);
+    }
   }
   writeFileSync(join(OUT, 'manifest.tsv'), [MANIFEST_COLUMNS.join('\t'), ...rows.map(manifestRow)].join('\n') + '\n', { mode: 0o600 });
   log(`${rows.length} file(s), ${failed} failed step(s); manifest ${join(OUT, 'manifest.tsv')}`);
-  await browser.close();
   return failed ? 3 : 0;
 }
-
-run().then((rc) => process.exit(rc), (e) => { log(`FATAL ${e.message}`); process.exit(2); });

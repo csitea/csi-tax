@@ -51,3 +51,30 @@ vero_latest_run() {
   r=$(find "$1/staging" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort | tail -n 1)
   echo "$r"
 }
+
+# vero_data_root: VERO_DATA_DIR, else $HOME/var/csi-tax/vero.
+vero_data_root() {
+  echo "${VERO_DATA_DIR:-$HOME/var/csi-tax/vero}"
+}
+
+# vero_session_dir: the kept-open browser session's control dir.
+vero_session_dir() {
+  echo "${VERO_SESSION_DIR:-$(vero_data_root)/session}"
+}
+
+# vero_profile_dir: the persistent browser profile (session cookies on disk).
+vero_profile_dir() {
+  echo "${VERO_PROFILE_DIR:-$(vero_data_root)/browser-profile}"
+}
+
+# vero_session_pid <session dir>: the pid of the live session, else exit 1.
+# A pid file whose process is gone, or is not vero-session.mjs, is stale.
+vero_session_pid() {
+  local pid cmd
+  [[ -r "$1/session.pid" ]] || return 1
+  read -r pid <"$1/session.pid" || return 1
+  [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null || return 1
+  cmd=$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null) || return 1
+  [[ "$cmd" == *vero-session.mjs* ]] || return 1
+  echo "$pid"
+}

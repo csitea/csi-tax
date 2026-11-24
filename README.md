@@ -16,7 +16,8 @@ The `./run` framework is copied from csi-spl (`run.sh` 3.10.0).
 
 | action | does |
 |---|---|
-| `./run -a do_vero_fetch` | headed browser, the owner logs in, read-only fetch of the year |
+| `./run -a do_vero_fetch` | read-only fetch of the year in the one kept-open browser window; the owner logs in once |
+| `./run -a do_vero_session_stop` | closes that window |
 | `./run -a do_vero_file` | name, file, index; with `DRY_RUN=0` upload to the bucket and the Drive |
 | `./run -a do_vero_weekly_diff` | what is new since last week, one issue draft per theme |
 | `./run -a do_vero_weekly_report` | the weekly markdown report |

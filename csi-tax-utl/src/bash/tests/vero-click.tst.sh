@@ -8,6 +8,7 @@
 #   3. A real button is found by its exact role name
 #   4. A forbidden label is refused before any lookup, and nothing is clicked
 #   5. A label outside main/nav/header is not clicked (times out)
+#   7. A hidden duplicate is skipped: the visible one is clicked
 #   6. A control named harmlessly (aria-label) whose visible text is a
 #      forbidden action is refused after the lookup, not clicked
 # Needs the module's playwright and its firefox build
@@ -29,6 +30,7 @@ cat >"$T/fixture.html" <<'HTML'
 <html><body>
 <header><div role="tablist"><a onclick="hit('contact')">Yhteydenpito</a></div></header>
 <main>
+  <div style="display:none"><a href="#" onclick="hit('hidden');return false">Saldoerittely</a></div>
   <div><a href="#" onclick="hit('balance');return false"><span aria-hidden="false">›</span> Saldoerittely</a></div>
   <button onclick="hit('search')">Hae</button>
   <a href="#" onclick="hit('archive-move');return false">Siirrä arkistoon</a>

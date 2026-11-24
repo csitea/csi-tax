@@ -10,9 +10,13 @@ report for the csitea reports discussion. Every command runs from the
 ### 1.1 The owner
 
 1. Is at the desktop where the browser opens (it is headed).
-2. Logs in to OmaVero himself, in the company role, when the browser shows
-   the login. Nobody else types into the login, and nothing stores it: the
-   browser context is fresh and discarded when the fetch ends.
+2. Logs in to OmaVero himself, in the company role, in the one browser
+   window the fetch opens. Nobody else types into the login. The window
+   stays open (owner's choice, 2026-11-24): later runs reuse it and its
+   login while OmaVero keeps the session, and every page the script opens
+   in it shares that login. The browser profile (`VERO_PROFILE_DIR`, mode
+   700, outside git) keeps the session cookies on disk; this replaces the
+   earlier "store no login data" rule.
 3. Answers the weekly login poll (section 5) and gives the go for posting
    the report.
 
@@ -24,7 +28,20 @@ report for the csitea reports discussion. Every command runs from the
 3. Sends the report and the issue drafts to the dispatch holder; it posts in
    no topic itself and never opens a PDF.
 
-### 1.3 Read-only in OmaVero
+### 1.3 The kept-open window
+
+`do_vero_fetch` starts one browser session (`src/node/vero-session.mjs`)
+when none runs and hands it each fetch; no run closes the window. Close it
+with:
+
+```bash
+DRY_RUN=0 ./run -a do_vero_session_stop
+```
+
+OmaVero and Suomi.fi end a session on their side after idle time; then the
+window shows the login again and the next run waits for the owner.
+
+### 1.4 Read-only in OmaVero
 
 The fetch only navigates, reads and downloads. It refuses to click the labels
 in `csi-tax-utl/cnf/vero-ui.json` `forbidden_clicks` (archive, send a
@@ -37,6 +54,7 @@ the URL (a per-session counter).
 
 | what | where |
 |---|---|
+| browser session control, browser profile | `$VERO_SESSION_DIR`, `$VERO_PROFILE_DIR` (default under `$VERO_DATA_DIR`, mode 700) |
 | one fetch run | `$VERO_DATA_DIR/<year>/staging/<yyyymmddThhmmss>/` (mode 700) |
 | filed copies | `$VERO_DATA_DIR/<year>/filed/<yyyy-mm>/` |
 | the index | `$VERO_DATA_DIR/<year>/index.tsv`, a dated copy per filing day in `history/` |
@@ -144,8 +162,10 @@ A sample made from fixture data: [weekly-report-sample.md](weekly-report-sample.
 
 ### 4.5 After the run
 
-The fetch removes the browser's temp artefacts of its run. The run's
-staging dir stays (mode 700) as the record of what OmaVero showed.
+The window stays open for the next run. The run's staging dir stays (mode
+700) as the record of what OmaVero showed. A failed step logs a `PROBE`
+line: the role, name and visibility of the controls that carry a cnf label,
+no page data.
 
 ## 5. The weekly schedule
 
@@ -209,7 +229,11 @@ HTML page; it needs section 3.1 done first.
    tab was taken on every second row: the fetch closes every other tab
    before each click, then waits for the tab on the `Retrieve` URL.
 2. A browser tool run inside a git tree left downloads and page snapshots
-   (with amounts) in an untracked folder there: the fetch runs with its cwd
-   in the staging dir and `.gitignore` names those folders.
+   (with amounts) in an untracked folder there: the session runs with its
+   cwd in its own session dir and `.gitignore` names those folders.
+4. The labels are not always links, tabs or buttons by their exact name (a
+   chevron in the name, an `<a>` without href, a hidden duplicate): the
+   lookup (`src/node/vero-click.mjs`) also takes the visible text, and only
+   visible controls. Each step starts from the front page.
 3. The payments CSVs are UTF-16LE, TAB separated, CRLF, decimal comma, and
    hold the whole history; they are filed as they are.

@@ -27,6 +27,7 @@ for f in "$MOD_ROOT"/src/bash/run/vero-*.func.sh; do
   b=$(basename "$f" .func.sh)
   n="${b%-diff}" && n="${n%-report}"
   [[ "$b" == vero-weekly-due || "$b" == vero-cron-install ]] && n=vero-schedule
+  [[ "$b" == vero-session-stop ]] && n=vero-fetch
   t=("$MOD_ROOT/src/bash/tests/$n.tst.sh")
   [[ -f "${t[0]}" ]] || miss+=" $b"
 done
