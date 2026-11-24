@@ -130,6 +130,14 @@ failed (`FAIL <step>`). The run stops at the first failed step
 (`STOP after <step>`), so the later steps never act on a page in an unknown
 state. What was fetched is kept, and a rerun fetches again.
 
+A run drives the tab of the window that is logged in. The session's own tab is
+only the first choice: if that tab is closed or logged out (run 11, 2026-11-24:
+it was closed while the owner logged in), the run takes the newest open tab
+showing the OmaVero front page, else the newest open tab on the OmaVero host,
+else the newest open tab, else ONE new tab in the same window and profile. It
+never opens a new window. While it waits for the login, any tab of the window
+counts (`vero-tabs.tst.sh`).
+
 Every step starts from the front page by clicking its tab. When the tab is
 not on the page, the step FAILs: the run never goes back in the browser history
 and never reloads the start URL (run 10, 2026-11-24, went back past

@@ -58,14 +58,35 @@ async function mainText(page) {
   return page.locator(UI.selectors.main).first().innerText();
 }
 
-// waitForLogin: at once when the session is still logged in; else the
-// owner logs in in the window, within loginS seconds.
-export async function waitForLogin(page, ui, loginS, logFn) {
-  const marker = page.getByText(ui.logged_in_text).first();
-  if (await marker.isVisible().catch(() => false)) { logFn('logged in (session kept)'); return; }
+// livePage: the tab a run drives (run 11: the session's own tab was closed
+// during the login, the window stayed open). The newest open tab showing
+// the logged-in text, else the newest open tab on the OmaVero host, else
+// the newest open tab, else ONE new tab in the same window and profile.
+// Never a new window. The session's tab is only the first choice.
+let LIVE = null;
+export async function livePage(ctx, page, ui, base) {
+  const open = [page, ...ctx.pages().slice().reverse()].filter((p) => p && !p.isClosed());
+  for (const p of open) if (await p.getByText(ui.logged_in_text).first().isVisible().catch(() => false)) return p;
+  const host = (() => { try { return new URL(base).host; } catch { return ''; } })();
+  return open.find((p) => host && p.url().includes(host)) ?? open[0] ?? ctx.newPage();
+}
+
+// waitForLogin: at once when a tab of the window is still logged in; else
+// the owner logs in in the window, in any of its tabs, within loginS seconds.
+export async function waitForLogin(page, ui, loginS, logFn, base = '') {
+  const ctx = page.context();
+  LIVE = await livePage(ctx, page, ui, base);
+  const on = (p) => p.getByText(ui.logged_in_text).first().isVisible().catch(() => false);
+  if (await on(LIVE)) { logFn(`logged in (session kept)${LIVE === page ? '' : ', in another tab of the window'}`); return; }
   logFn(`waiting up to ${loginS}s for the owner to log in in the browser window`);
-  await marker.waitFor({ timeout: loginS * 1000 });
-  logFn('logged in');
+  const end = Date.now() + loginS * 1000;
+  for (;;) {
+    for (const p of ctx.pages().slice().reverse()) {
+      if (!p.isClosed() && await on(p)) { LIVE = p; logFn(`logged in${p === page ? '' : ' (in another tab of the window)'}`); return; }
+    }
+    if (Date.now() > end) throw new Error(`no tab of the window logged in within ${loginS}s`);
+    await new Promise((r) => setTimeout(r, 1000));
+  }
 }
 
 // home: back to the front page; every step starts here. It clicks the
@@ -227,6 +248,8 @@ const label = (k) => UI.tabs[k] || UI.links[k];
 
 export async function runFetch({ ctx, page, ui, base, year, out, logFn }) {
   BASE = base; YEAR = year; OUT = out; UI = ui; rows = []; log = logFn;
+  if (LIVE && !LIVE.isClosed()) page = LIVE;
+  else if (page.isClosed()) page = await livePage(ctx, page, ui, base);
   let failed = 0;
   const steps = Object.entries({ stepFront, stepBalance, stepInbox, stepArchive, stepMessages, stepPayments, stepTasks });
   for (const [idx, [name, step]] of steps.entries()) {
