@@ -20,6 +20,8 @@ The `./run` framework is copied from csi-spl (`run.sh` 3.10.0).
 | `./run -a do_vero_file` | name, file, index; with `DRY_RUN=0` upload to the bucket and the Drive |
 | `./run -a do_vero_weekly_diff` | what is new since last week, one issue draft per theme |
 | `./run -a do_vero_weekly_report` | the weekly markdown report |
+| `./run -a do_vero_weekly_due` | the cron trigger: acts only at Tuesday 15:30 Europe/Helsinki |
+| `./run -a do_vero_cron_install` | installs that trigger in the current user's crontab |
 
 Each one is a dry run or read-only by default; `./run --help` lists them.
 How to run the week: [doc/md/weekly-vero-check.md](doc/md/weekly-vero-check.md).

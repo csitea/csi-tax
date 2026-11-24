@@ -13,7 +13,8 @@ report for the csitea reports discussion. Every command runs from the
 2. Logs in to OmaVero himself, in the company role, when the browser shows
    the login. Nobody else types into the login, and nothing stores it: the
    browser context is fresh and discarded when the fetch ends.
-3. Gives the go for the weekly run (section 5) and for posting the report.
+3. Answers the weekly login poll (section 5) and gives the go for posting
+   the report.
 
 ### 1.2 The agent
 
@@ -146,21 +147,50 @@ A sample made from fixture data: [weekly-report-sample.md](weekly-report-sample.
 The fetch removes the browser's temp artefacts of its run. The run's
 staging dir stays (mode 700) as the record of what OmaVero showed.
 
-## 5. The weekly schedule (proposal, not installed)
+## 5. The weekly schedule
 
-Nothing is scheduled until the owner's go, relayed by the dispatch holder.
-The proposal:
+Owner's choice (2026-11-24): **every Tuesday at 15:30 Europe/Helsinki**.
 
-1. **Monday 09:00 Europe/Helsinki**, a box cron line on the box that holds
-   the tax data sends one spool message to the standing tax seat: "weekly
-   Vero check due".
+### 5.1 How it fires
+
+The box cron (Debian `cron`) has no per-crontab timezone (`CRON_TZ`), so
+one line fires at minute :30 of every hour, Monday to Wednesday in box time,
+and `do_vero_weekly_due` acts only when the Helsinki time is Tuesday 15:30
+(13:30Z in winter, 12:30Z in summer). It follows Helsinki across DST
+whatever the box timezone, and sends at most one notice a day.
+
+### 5.2 Who wakes whom
+
+1. The cron line runs `do_vero_weekly_due`, which runs `VERO_NOTIFY_CMD`: a
+   message to the standing tax seat, "weekly Vero check due".
 2. The seat asks the owner, with a poll form in the csitea topic, when he can
-   log in (now / in 1 hour / skip this week).
-3. On "now", the seat runs 4.1 and the owner logs in; then 4.2, 4.3, 4.4.
+   log in (now / in 15 min / in about 1 h / skip this week).
+3. On his answer the seat runs 4.1 and the owner logs in; then 4.2, 4.3, 4.4.
 4. The seat sends the report and the issue drafts to the dispatch holder,
    which posts the report in the csitea reports discussion and files one
    issue per new theme.
-5. A week skipped twice is named in the next report.
+
+### 5.3 Install
+
+The values live in an env file outside git, mode 600, named by
+`VERO_ENV_FILE`; it holds `VERO_NOTIFY_CMD` and the section 3.2 values.
+See the line first:
+
+```bash
+VERO_ENV_FILE="$VERO_ENV_FILE" ./run -a do_vero_cron_install
+```
+
+Then install it in the current user's crontab (a rerun replaces it):
+
+```bash
+VERO_ENV_FILE="$VERO_ENV_FILE" DRY_RUN=0 ./run -a do_vero_cron_install
+```
+
+Check it:
+
+```bash
+crontab -l
+```
 
 ## 6. Tests
 
