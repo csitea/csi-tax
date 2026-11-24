@@ -99,3 +99,18 @@ export function keepaliveDue(now, last, env = {}) {
   const min = Number(env.VERO_KEEPALIVE_MIN ?? 2);
   return Number.isFinite(min) && min > 0 && now - last >= min * 60000;
 }
+
+// clickLog(message): the lines of a Playwright error that say why a click
+// did not land (run 6: every click timed out on a visible control), e.g.
+// "<div class=overlay> intercepts pointer events"; deduped, at most 6,
+// amounts scrubbed, each cut to 200 chars.
+export function clickLog(message) {
+  const keep = /intercepts pointer events|not stable|not visible|not enabled|outside of the viewport|waiting for|retrying|scrolling/i;
+  const out = [];
+  for (const raw of String(message).split('\n').slice(1)) {
+    const l = scrubAmounts(raw.trim().replace(/^-\s*/, '')).slice(0, 200);
+    if (l && keep.test(l) && !out.includes(l)) out.push(l);
+    if (out.length === 6) break;
+  }
+  return out;
+}

@@ -125,9 +125,10 @@ Then open the browser; the owner logs in within 15 minutes
 VERO_BASE_URL="$VERO_BASE_URL" DRY_RUN=0 ./run -a do_vero_fetch
 ```
 
-It ends with the count of files and the staging run. Exit 3 means some steps
-failed (each is named `FAIL <step>`); what was fetched is kept, and a rerun
-fetches again.
+It ends with the count of files and the staging run. Exit 3 means a step
+failed (`FAIL <step>`). The run stops at the first failed step
+(`STOP after <step>`), so the later steps never act on a page in an unknown
+state. What was fetched is kept, and a rerun fetches again.
 
 ### 4.2 File
 
@@ -171,7 +172,9 @@ A sample made from fixture data: [weekly-report-sample.md](weekly-report-sample.
 The window stays open for the next run. The run's staging dir stays (mode
 700) as the record of what OmaVero showed. A failed step logs a `PROBE`
 line: the role, name and visibility of the controls that carry a cnf label,
-no page data.
+no page data. It also logs `CLICKLOG` lines, which give Playwright's reason a click
+did not land (e.g. `<div …> intercepts pointer events`), and a `DIALOGS` line
+listing the visible dialogs or full-page layers that may cover the page.
 
 ## 5. The weekly schedule
 

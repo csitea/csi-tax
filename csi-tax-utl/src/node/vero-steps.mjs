@@ -8,12 +8,13 @@
 // It never types into the login, never clicks a label of cnf forbidden_clicks
 // (the session also aborts every PUT / PATCH / DELETE). Each step starts from
 // the front page, so a step that fails leaves the next one a known page; a
-// failed step logs a label-only probe (role, name, visible) and no page data.
+// failed step logs a label-only probe (role, name, visible), the click log
+// and what covers the page, no page data, and the run stops there.
 import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  arrivalDate, dueDate, inYear, isPdf,
+  arrivalDate, clickLog, dueDate, inYear, isPdf,
   manifestRow, MANIFEST_COLUMNS, driveCategory,
 } from './vero-lib.mjs';
 import { clickControl, findControl, retrieveDoc } from './vero-click.mjs';
@@ -66,6 +67,19 @@ async function home(page) {
   }
   await page.goto(BASE).catch(() => {});
   await page.getByText(UI.logged_in_text).first().waitFor({ timeout: 30000 });
+}
+
+// dialogs: for a failed step, what may cover the page: visible dialogs,
+// modals and fixed full-size layers, as tag / role / class / first 60 chars.
+async function dialogs(page) {
+  return page.evaluate(() => [...document.querySelectorAll('[role=dialog], [role=alertdialog], dialog, [aria-modal=true], .modal, body *')]
+    .filter((e) => { if (!(e.offsetWidth || e.offsetHeight)) return false;
+      const cs = getComputedStyle(e);
+      return e.matches('[role=dialog], [role=alertdialog], dialog, [aria-modal=true], .modal')
+        || ((cs.position === 'fixed' || cs.position === 'absolute') && e.offsetWidth >= innerWidth * 0.8 && e.offsetHeight >= innerHeight * 0.8); })
+    .slice(0, 10).map((e) => ({ tag: e.tagName.toLowerCase(), role: e.getAttribute('role') || '', cls: String(e.className).slice(0, 60),
+      text: (e.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 60) })))
+    .catch((e) => [`dialogs failed: ${e.message}`]);
 }
 
 // probe: for a failed step, the controls whose text holds a cnf label, as
@@ -200,7 +214,13 @@ export async function runFetch({ ctx, page, ui, base, year, out, logFn }) {
       await step(ctx, page); log(`OK ${name}`);
     } catch (e) {
       failed++; log(`FAIL ${name}: ${e.message.split('\n')[0]}`);
+      for (const l of clickLog(e.message)) log(`CLICKLOG ${name} ${l}`);
+      log(`DIALOGS ${name} ${JSON.stringify(await dialogs(page))}`);
       log(`PROBE ${name} ${JSON.stringify(await probe(page))}`);
+      // stop at the first failure (dispatch rule for live runs): the next
+      // steps start from a page in an unknown state.
+      log(`STOP after ${name}: the remaining steps did not run`);
+      break;
     }
   }
   writeFileSync(join(OUT, 'manifest.tsv'), [MANIFEST_COLUMNS.join('\t'), ...rows.map(manifestRow)].join('\n') + '\n', { mode: 0o600 });
