@@ -1,0 +1,17 @@
+# Tax data never enters git: the fetch writes under VERO_DATA_DIR
+# (default $HOME/var/csi-tax/vero), these catch a run started in the tree.
+staging/
+filed/
+reports/
+history/
+index.tsv
+manifest.tsv
+*.pdf
+*.csv
+.playwright-mcp/
+playwright-artifacts-*/
+node_modules/
+dat/log/
+*.log
+.env
+*.key.json
