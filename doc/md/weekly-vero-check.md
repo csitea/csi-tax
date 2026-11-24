@@ -38,8 +38,14 @@ with:
 DRY_RUN=0 ./run -a do_vero_session_stop
 ```
 
-OmaVero and Suomi.fi end a session on their side after idle time; then the
-window shows the login again and the next run waits for the owner.
+OmaVero drops an idle login after about 5 minutes (the owner's estimate) and
+may cap a session at about 2 hours (not measured). Between runs the session
+reloads the start page in a second tab every `VERO_KEEPALIVE_MIN` minutes
+(default 2; `VERO_KEEPALIVE=0` turns it off): read-only, no click. When the
+login is gone anyway, the window shows the login again and the next run
+waits for the owner. Each run loads the step code as it is on disk, so a
+fix to the steps needs no new window. A run closes only the document tabs
+its own clicks opened.
 
 ### 1.4 Read-only in OmaVero
 

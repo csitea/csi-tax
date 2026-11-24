@@ -10,10 +10,15 @@
 // session cookies on disk between restarts. The window is never closed by a
 // run; only a stop request (do_vero_session_stop) or the owner closes it.
 // Every PUT / PATCH / DELETE request is aborted (read-only in OmaVero).
-import { appendFileSync, chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { isWriteRequest } from './vero-lib.mjs';
-import { runFetch, waitForLogin } from './vero-steps.mjs';
+// Each fetch loads the step code fresh (a copy of src/node/vero-*.mjs under
+// VERO_SESSION_DIR/code/), so a fix to the steps needs no new window and no
+// new login. Between fetches a second tab reloads the start page every
+// VERO_KEEPALIVE_MIN minutes (default 2; VERO_KEEPALIVE=0 turns it off) so
+// OmaVero does not drop the idle login; it reads only and clicks nothing.
+import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { isWriteRequest, keepaliveDue } from './vero-lib.mjs';
 
 const env = (k) => {
   if (!process.env[k]) { console.error(`vero-session: ${k} must be set (do_vero_fetch sets it)`); process.exit(2); }
@@ -24,6 +29,30 @@ const SDIR = env('VERO_SESSION_DIR');
 const PROFILE = env('VERO_PROFILE_DIR');
 const UI = JSON.parse(readFileSync(env('VERO_UI_CNF'), 'utf8'));
 const PID = join(SDIR, 'session.pid');
+const SRC = dirname(fileURLToPath(import.meta.url));
+const slog = (m) => console.log(`${new Date().toISOString()} vero-session: ${m}`);
+
+// steps <id>: the step code as it is on disk now, copied to code/<id>/ and
+// imported from there (an import is cached per path).
+async function steps(id) {
+  const dir = join(SDIR, 'code', id);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  for (const f of readdirSync(SRC).filter((n) => /^vero-.*\.mjs$/.test(n) && n !== 'vero-session.mjs')) copyFileSync(join(SRC, f), join(dir, f));
+  return import(join(dir, 'vero-steps.mjs'));
+}
+
+// keepalive: reload the keep-alive tab (made on first use, again if closed).
+async function keepalive(s) {
+  try {
+    if (!s.ka || s.ka.isClosed()) s.ka = await s.ctx.newPage();
+    await s.ka.goto(BASE).catch(() => {});
+    await s.ka.waitForLoadState('networkidle').catch(() => {});
+    const on = await s.ka.getByText(UI.logged_in_text).first().isVisible().catch(() => false);
+    slog(`keep-alive reload, ${on ? 'logged in' : 'NOT logged in'}`);
+  } catch (e) {
+    slog(`keep-alive failed: ${e.message.split('\n')[0]}`);
+  }
+}
 
 function dirs() {
   for (const d of [SDIR, join(SDIR, 'requests'), join(SDIR, 'results'), PROFILE]) {
@@ -50,6 +79,7 @@ async function serve(s, id, req) {
   let rc;
   try {
     mkdirSync(req.out, { recursive: true, mode: 0o700 });
+    const { runFetch, waitForLogin } = await steps(id);
     await waitForLogin(s.page, UI, Number(req.login_timeout_s ?? 900), logFn);
     rc = await runFetch({ ctx: s.ctx, page: s.page, ui: UI, base: BASE, year: Number(req.year), out: req.out, logFn });
   } catch (e) {
@@ -74,15 +104,17 @@ async function main() {
   writeFileSync(PID, `${process.pid}\n`, { mode: 0o600 });
   let closed = false;
   s.ctx.on('close', () => { closed = true; });
-  console.log(`vero-session: serving, pid ${process.pid}`);
+  slog(`serving, pid ${process.pid}`);
+  let last = Date.now();
   while (!closed) {
     const n = next();
     if (n?.req.stop) break;
-    if (n) await serve(s, n.id, n.req);
-    else await new Promise((r) => setTimeout(r, 500));
+    if (n) { await serve(s, n.id, n.req); last = Date.now(); continue; }
+    if (keepaliveDue(Date.now(), last, process.env)) { await keepalive(s); last = Date.now(); }
+    await new Promise((r) => setTimeout(r, 500));
   }
   if (existsSync(PID)) rmSync(PID);
-  console.log(`vero-session: ${closed ? 'the window was closed' : 'stopped on request'}`);
+  slog(closed ? 'the window was closed' : 'stopped on request');
   if (!closed) await s.ctx.close();
 }
 

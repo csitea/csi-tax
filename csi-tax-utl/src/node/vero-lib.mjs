@@ -89,3 +89,13 @@ export function isPdf(buf) {
 export function isWriteRequest(method) {
   return ['PUT', 'PATCH', 'DELETE'].includes(String(method).toUpperCase());
 }
+
+// keepaliveDue(now, last, env): the kept-open session reloads its keep-alive
+// tab when VERO_KEEPALIVE is not 0 and VERO_KEEPALIVE_MIN minutes (default 2:
+// the owner, msg c65f1716, OmaVero drops an idle login after about 5) have
+// passed since the last reload or fetch. Times in ms.
+export function keepaliveDue(now, last, env = {}) {
+  if (String(env.VERO_KEEPALIVE ?? '1') === '0') return false;
+  const min = Number(env.VERO_KEEPALIVE_MIN ?? 2);
+  return Number.isFinite(min) && min > 0 && now - last >= min * 60000;
+}

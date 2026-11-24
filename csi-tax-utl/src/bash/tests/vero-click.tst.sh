@@ -9,6 +9,7 @@
 #   4. A forbidden label is refused before any lookup, and nothing is clicked
 #   5. A label outside main/nav/header is not clicked (times out)
 #   7. A hidden duplicate is skipped: the visible one is clicked
+#   8. A tab whose name carries a counter ("Viestit 3") is found by its label
 #   6. A control named harmlessly (aria-label) whose visible text is a
 #      forbidden action is refused after the lookup, not clicked
 # Needs the module's playwright and its firefox build
@@ -28,7 +29,7 @@ fi
 
 cat >"$T/fixture.html" <<'HTML'
 <html><body>
-<header><div role="tablist"><a onclick="hit('contact')">Yhteydenpito</a></div></header>
+<header><div role="tablist"><a onclick="hit('contact')">Yhteydenpito</a><a role="tab" href="#" onclick="hit('tasks');return false">Viestit 3</a></div></header>
 <main>
   <div style="display:none"><a href="#" onclick="hit('hidden');return false">Saldoerittely</a></div>
   <div><a href="#" onclick="hit('balance');return false"><span aria-hidden="false">›</span> Saldoerittely</a></div>
@@ -57,6 +58,7 @@ await tryClick('c3', 'Hae', 2000);
 await tryClick('c4', 'Siirrä arkistoon', 2000);
 await tryClick('c5', 'Tehtävät', 1000);
 await tryClick('c6', 'Lomake', 1000);
+await tryClick('c8', 'Viestit', 2000);
 out.clicks = await page.evaluate(() => window.clicks.join(','));
 console.log(JSON.stringify(out));
 await b.close();
@@ -73,5 +75,6 @@ v() { jq -r ".$1" <<<"$res"; }
 [[ "$(v c4)" == "refused forbidden click: Siirrä arkistoon" ]] && pass "4. forbidden label refused" || fail "4. $(v c4)"
 [[ "$(v c5)" == "no control named \"Tehtävät\" within 1000 ms" ]] && pass "5. label outside main/nav not clicked" || fail "5. $(v c5)"
 [[ "$(v c6)" == "refused forbidden click: Tee uusi ilmoitus" ]] && pass "6. forbidden text refused after lookup" || fail "6. $(v c6)"
-[[ "$(v clicks)" == "contact,balance,search" ]] && pass "clicks were exactly contact,balance,search" || fail "clicks: $(v clicks)"
+[[ "$(v c8)" == clicked ]] && pass "8. tab with a counter found" || fail "8. $(v c8)"
+[[ "$(v clicks)" == "contact,balance,search,tasks" ]] && pass "clicks were exactly contact,balance,search,tasks" || fail "clicks: $(v clicks)"
 finish

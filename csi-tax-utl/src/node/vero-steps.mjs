@@ -13,10 +13,10 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  arrivalDate, dueDate, inYear, isForbiddenLabel, isPdf,
+  arrivalDate, dueDate, inYear, isPdf,
   manifestRow, MANIFEST_COLUMNS, driveCategory,
 } from './vero-lib.mjs';
-import { clickControl, findControl } from './vero-click.mjs';
+import { clickControl, findControl, retrieveDoc } from './vero-click.mjs';
 
 // One run's settings and results; set by runFetch, read by the steps.
 let BASE, YEAR, OUT, UI, rows, log;
@@ -52,10 +52,20 @@ export async function waitForLogin(page, ui, loginS, logFn) {
   logFn('logged in');
 }
 
-// home: back to the front page; every step starts here.
+// home: back to the front page; every step starts here. It clicks the
+// front tab; a sub view without it (the decisions view, run 5) is left by
+// going back. Reloading the start URL is the last resort: OmaVero aborts it
+// (NS_BINDING_ABORTED, run 5), so its error is ignored and the login text
+// decides.
 async function home(page) {
-  await page.goto(BASE);
-  await page.waitForLoadState('networkidle').catch(() => {});
+  for (let i = 0; i < 5; i++) {
+    const tab = await findControl(page, UI.tabs.front, UI.forbidden_clicks, 3000).catch(() => null);
+    if (tab) { await tab.click(); await page.waitForLoadState('networkidle').catch(() => {}); return; }
+    await page.goBack().catch(() => {});
+    await page.waitForLoadState('networkidle').catch(() => {});
+  }
+  await page.goto(BASE).catch(() => {});
+  await page.getByText(UI.logged_in_text).first().waitFor({ timeout: 30000 });
 }
 
 // probe: for a failed step, the controls whose text holds a cnf label, as
@@ -68,41 +78,21 @@ async function probe(page) {
     .filter((c) => ls.some((l) => c.name.includes(l))).slice(0, 40), labels).catch((e) => [`probe failed: ${e.message}`]);
 }
 
-// closeOthers: every tab but the main one. The first hand run took the wrong
-// popup on every second row when an old tab was still open.
-async function closeOthers(ctx, page) {
-  for (const p of ctx.pages()) if (p !== page) await p.close().catch(() => {});
-}
-
-// retrieveUrl: click a row link, poll the tabs until one opens on the
-// Retrieve URL, take that URL and close the tab.
-async function retrieveUrl(ctx, page, link) {
-  await closeOthers(ctx, page);
-  const label = await link.innerText();
-  if (isForbiddenLabel(label, UI.forbidden_clicks)) throw new Error(`refused forbidden click: ${label}`);
-  await link.click();
-  for (let i = 0; i < 120; i++) {
-    const hit = ctx.pages().find((p) => p !== page && p.url().includes(UI.selectors.retrieve_url));
-    if (hit) { const u = hit.url(); await hit.close(); return u; }
-    await page.waitForTimeout(250);
-  }
-  throw new Error(`no Retrieve tab opened for "${label}"`);
-}
-
 async function rowCells(link) {
   return link.locator('xpath=ancestor::tr[1]/td').allInnerTexts();
 }
 
 // pdfRows: every row link of a decisions list whose arrival date is in YEAR.
+// A list with no row at all is a failure (run 5 said OK with 0 rows).
 async function pdfRows(ctx, page, links, source) {
+  await links.first().waitFor({ timeout: 15000 }).catch(() => { throw new Error(`no ${source} rows found`); });
   const n = await links.count();
   for (let i = 0; i < n; i++) {
     const link = links.nth(i);
     const td = await rowCells(link);
     const arrival = arrivalDate(td[0] ?? '');
     if (!inYear(arrival, YEAR)) continue;
-    const res = await ctx.request.get(await retrieveUrl(ctx, page, link));
-    const buf = await res.body();
+    const buf = await retrieveDoc(ctx, page, link, UI.forbidden_clicks, UI.selectors.retrieve_url);
     if (!isPdf(buf)) { log(`not a PDF, skipped: ${source} row ${i + 1}`); continue; }
     const sum = sha256(buf);
     if (rows.some((r) => r.sha256 === sum)) continue;
