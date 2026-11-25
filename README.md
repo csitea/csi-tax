@@ -1,8 +1,19 @@
 # csi-tax
 
 Csitea's tax paperwork, automated where it can be: today the weekly read of
-OmaVero (the Finnish tax administration's e-service). Private repository.
-No tax data, secret or key is ever in git; the data lives outside the tree.
+OmaVero (the Finnish tax administration's e-service, Vero.fi). The scripts
+open OmaVero in a browser window on the company owner's own machine, fetch
+the year's decisions, letters and payment data read-only, file them by month
+and type, and write a weekly report of what is new and what is due.
+
+- **The owner logs in himself.** The scripts never type, read or store
+  credentials; they wait in the open window until the login is done.
+- **No tax data, secret or key is ever in git.** The documents live outside
+  the tree (`VERO_DATA_DIR`, a private bucket and Drive); the bucket, folder
+  and service account keys are read from variables you set, never defaults.
+
+Licence: GNU AGPL v3, the same as [csi-spl](https://github.com/csitea/csi-spl)
+(see [LICENSE](LICENSE)).
 
 | dir | holds |
 |---|---|
